@@ -1,0 +1,30 @@
+{
+  "dataset": "sentinelai-auth-network-synthetic-v1",
+  "notice": "Entirely synthetic lab telemetry. No real users, hosts, or incidents are represented.",
+  "events": [
+    {"event_time":"2026-10-21T12:30:00Z","event_type":"auth.failure","src_ip":"198.51.100.24","host_id":"lab-auth-01","username":"analyst-demo","severity":"low","message":"Synthetic invalid password"},
+    {"event_time":"2026-10-21T12:30:08Z","event_type":"auth.failure","src_ip":"198.51.100.24","host_id":"lab-auth-01","username":"analyst-demo","severity":"low","message":"Synthetic invalid password"},
+    {"event_time":"2026-10-21T12:30:16Z","event_type":"auth.failure","src_ip":"198.51.100.24","host_id":"lab-auth-01","username":"analyst-demo","severity":"low","message":"Synthetic invalid password"},
+    {"event_time":"2026-10-21T12:30:24Z","event_type":"auth.failure","src_ip":"198.51.100.24","host_id":"lab-auth-01","username":"analyst-demo","severity":"low","message":"Synthetic invalid password"},
+    {"event_time":"2026-10-21T12:30:32Z","event_type":"auth.failure","src_ip":"198.51.100.24","host_id":"lab-auth-01","username":"analyst-demo","severity":"low","message":"Synthetic invalid password"},
+    {"event_time":"2026-10-21T12:30:40Z","event_type":"auth.failure","src_ip":"198.51.100.24","host_id":"lab-auth-01","username":"analyst-demo","severity":"low","message":"Synthetic invalid password"},
+    {"event_time":"2026-10-21T12:30:48Z","event_type":"auth.failure","src_ip":"198.51.100.24","host_id":"lab-auth-01","username":"analyst-demo","severity":"low","message":"Synthetic invalid password"},
+    {"event_time":"2026-10-21T12:30:56Z","event_type":"auth.failure","src_ip":"198.51.100.24","host_id":"lab-auth-01","username":"analyst-demo","severity":"low","message":"Synthetic invalid password"},
+    {"event_time":"2026-10-21T12:31:04Z","event_type":"auth.failure","src_ip":"198.51.100.24","host_id":"lab-auth-01","username":"analyst-demo","severity":"low","message":"Synthetic invalid password"},
+    {"event_time":"2026-10-21T12:31:12Z","event_type":"auth.success","src_ip":"198.51.100.24","host_id":"lab-auth-01","username":"analyst-demo","severity":"informational","message":"Synthetic successful login following failures"},
+    {"event_time":"2026-10-21T12:40:00Z","event_type":"net.conn","src_ip":"203.0.113.50","dst_ip":"192.0.2.10","src_port":51000,"dst_port":20,"host_id":"lab-sensor-01","severity":"informational","protocol":"tcp"},
+    {"event_time":"2026-10-21T12:40:02Z","event_type":"net.conn","src_ip":"203.0.113.50","dst_ip":"192.0.2.10","src_port":51001,"dst_port":21,"host_id":"lab-sensor-01","severity":"informational","protocol":"tcp"},
+    {"event_time":"2026-10-21T12:40:04Z","event_type":"net.conn","src_ip":"203.0.113.50","dst_ip":"192.0.2.10","src_port":51002,"dst_port":22,"host_id":"lab-sensor-01","severity":"informational","protocol":"tcp"},
+    {"event_time":"2026-10-21T12:40:06Z","event_type":"net.conn","src_ip":"203.0.113.50","dst_ip":"192.0.2.10","src_port":51003,"dst_port":23,"host_id":"lab-sensor-01","severity":"informational","protocol":"tcp"},
+    {"event_time":"2026-10-21T12:40:08Z","event_type":"net.conn","src_ip":"203.0.113.50","dst_ip":"192.0.2.10","src_port":51004,"dst_port":25,"host_id":"lab-sensor-01","severity":"informational","protocol":"tcp"},
+    {"event_time":"2026-10-21T12:40:10Z","event_type":"net.conn","src_ip":"203.0.113.50","dst_ip":"192.0.2.10","src_port":51005,"dst_port":53,"host_id":"lab-sensor-01","severity":"informational","protocol":"tcp"},
+    {"event_time":"2026-10-21T12:40:12Z","event_type":"net.conn","src_ip":"203.0.113.50","dst_ip":"192.0.2.10","src_port":51006,"dst_port":80,"host_id":"lab-sensor-01","severity":"informational","protocol":"tcp"},
+    {"event_time":"2026-10-21T12:40:14Z","event_type":"net.conn","src_ip":"203.0.113.50","dst_ip":"192.0.2.10","src_port":51007,"dst_port":110,"host_id":"lab-sensor-01","severity":"informational","protocol":"tcp"},
+    {"event_time":"2026-10-21T12:40:16Z","event_type":"net.conn","src_ip":"203.0.113.50","dst_ip":"192.0.2.10","src_port":51008,"dst_port":143,"host_id":"lab-sensor-01","severity":"informational","protocol":"tcp"},
+    {"event_time":"2026-10-21T12:40:18Z","event_type":"net.conn","src_ip":"203.0.113.50","dst_ip":"192.0.2.10","src_port":51009,"dst_port":443,"host_id":"lab-sensor-01","severity":"informational","protocol":"tcp"},
+    {"event_time":"2026-10-21T12:40:20Z","event_type":"net.conn","src_ip":"203.0.113.50","dst_ip":"192.0.2.10","src_port":51010,"dst_port":445,"host_id":"lab-sensor-01","severity":"informational","protocol":"tcp"},
+    {"event_time":"2026-10-21T12:40:22Z","event_type":"net.conn","src_ip":"203.0.113.50","dst_ip":"192.0.2.10","src_port":51011,"dst_port":993,"host_id":"lab-sensor-01","severity":"informational","protocol":"tcp"},
+    {"event_time":"2026-10-21T12:40:24Z","event_type":"net.conn","src_ip":"203.0.113.50","dst_ip":"192.0.2.10","src_port":51012,"dst_port":3306,"host_id":"lab-sensor-01","severity":"informational","protocol":"tcp"},
+    {"event_time":"2026-10-21T12:40:26Z","event_type":"net.conn","src_ip":"203.0.113.50","dst_ip":"192.0.2.10","src_port":51013,"dst_port":5432,"host_id":"lab-sensor-01","severity":"informational","protocol":"tcp"}
+  ]
+}

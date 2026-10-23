@@ -1,0 +1,35 @@
+groups:
+  - name: sentinelai-service
+    rules:
+      - alert: SentinelApiScrapeMissing
+        expr: up{job="sentinelai-api"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: SentinelAI API metrics scrape is unavailable
+          description: Prometheus cannot scrape the API metrics endpoint for at least two minutes.
+
+      - alert: SentinelApiHighServerErrorRate
+        expr: |
+          sum(rate(sentinel_http_requests_total{status=~"5.."}[5m]))
+          / clamp_min(sum(rate(sentinel_http_requests_total[5m])), 0.001) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: SentinelAI API server error rate is above 5 percent
+          description: More than five percent of API requests returned a server error over five minutes.
+
+      - alert: SentinelApiHighRequestLatency
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le) (rate(sentinel_http_request_duration_seconds_bucket[10m]))
+          ) > 2
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: SentinelAI API p95 latency is above two seconds
+          description: The API request p95 latency remained above two seconds for ten minutes.

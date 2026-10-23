@@ -1,0 +1,33 @@
+{
+  "Records": [
+    {
+      "eventTime": "2026-10-23T12:00:00Z",
+      "eventSource": "iam.amazonaws.com",
+      "eventName": "CreateAccessKey",
+      "eventID": "synthetic-aws-iam-001",
+      "awsRegion": "eu-central-1",
+      "sourceIPAddress": "192.0.2.44",
+      "recipientAccountId": "111122223333",
+      "userAgent": "SentinelAI synthetic fixture",
+      "userIdentity": {
+        "type": "IAMUser",
+        "userName": "synthetic-operator",
+        "accountId": "111122223333"
+      }
+    },
+    {
+      "eventTime": "2026-10-23T12:01:00Z",
+      "eventSource": "ec2.amazonaws.com",
+      "eventName": "DescribeInstances",
+      "eventID": "synthetic-aws-ec2-002",
+      "awsRegion": "eu-central-1",
+      "sourceIPAddress": "192.0.2.44",
+      "recipientAccountId": "111122223333",
+      "userIdentity": {
+        "type": "AssumedRole",
+        "principalId": "synthetic-role:session",
+        "accountId": "111122223333"
+      }
+    }
+  ]
+}

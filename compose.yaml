@@ -1,0 +1,251 @@
+name: sentinelai-xdr
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: sentinel
+      POSTGRES_USER: sentinel
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-sentinel_dev_only}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "${POSTGRES_BIND_ADDRESS:-127.0.0.1:5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sentinel -d sentinel"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  db-provision:
+    image: postgres:16-alpine
+    environment:
+      SENTINEL_ENV: ${SENTINEL_ENV:-development}
+      POSTGRES_USER: sentinel
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-sentinel_dev_only}
+      POSTGRES_APP_PASSWORD: ${POSTGRES_APP_PASSWORD:-sentinel_runtime_dev_only}
+      POSTGRES_MIGRATOR_PASSWORD: ${POSTGRES_MIGRATOR_PASSWORD:-sentinel_migrator_dev_only}
+    command: ["sh", "-c", "if [ \"$${SENTINEL_ENV:-development}\" = production ]; then for key in POSTGRES_PASSWORD POSTGRES_APP_PASSWORD POSTGRES_MIGRATOR_PASSWORD; do value=\"$$(printenv $$key)\"; if [ $${#value} -lt 32 ]; then echo \"$$key must contain at least 32 characters in production\" >&2; exit 1; fi; done; fi; PGPASSWORD=\"$$POSTGRES_PASSWORD\" psql -v ON_ERROR_STOP=1 -h postgres -U sentinel -d sentinel -v app_password=\"$$POSTGRES_APP_PASSWORD\" -v migrator_password=\"$$POSTGRES_MIGRATOR_PASSWORD\" -f /scripts/provision_runtime_role.sql"]
+    volumes:
+      - ./backend/provision_runtime_role.sql:/scripts/provision_runtime_role.sql:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  db-migrate:
+    build: ./backend
+    command: ["alembic", "upgrade", "head"]
+    environment:
+      SENTINEL_ENV: ${SENTINEL_ENV:-development}
+      SENTINEL_COMPONENT: migration
+      SECRET_KEY: ${SECRET_KEY:-dev-insecure-change-me}
+      DATABASE_URL: postgresql+psycopg://sentinel_migrator:${POSTGRES_MIGRATOR_PASSWORD:-sentinel_migrator_dev_only}@postgres:5432/sentinel
+      MIGRATION_DATABASE_URL: postgresql+psycopg://sentinel_migrator:${POSTGRES_MIGRATOR_PASSWORD:-sentinel_migrator_dev_only}@postgres:5432/sentinel
+      REDIS_URL: redis://redis:6379/0
+      SENTINEL_JOB_RUNNER: celery
+      CORS_ORIGINS: "${CORS_ORIGINS:-http://127.0.0.1:8080,http://localhost:8080}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      db-provision:
+        condition: service_completed_successfully
+    restart: "no"
+
+  backend:
+    build: ./backend
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    environment:
+      SENTINEL_ENV: ${SENTINEL_ENV:-development}
+      SENTINEL_COMPONENT: api
+      SECRET_KEY: ${SECRET_KEY:-dev-insecure-change-me}
+      MFA_ENCRYPTION_KEY: ${MFA_ENCRYPTION_KEY:-}
+      CLOUD_CONNECTOR_ENCRYPTION_KEY: ${CLOUD_CONNECTOR_ENCRYPTION_KEY:-}
+      METRICS_TOKEN: ${METRICS_TOKEN:-}
+      OIDC_ISSUER: ${OIDC_ISSUER:-}
+      OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-}
+      OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-}
+      OIDC_REDIRECT_URI: ${OIDC_REDIRECT_URI:-}
+      DATABASE_URL: postgresql+psycopg://sentinel_runtime:${POSTGRES_APP_PASSWORD:-sentinel_runtime_dev_only}@postgres:5432/sentinel
+      REDIS_URL: redis://redis:6379/0
+      SENTINEL_JOB_RUNNER: celery
+      SENTINEL_DEFAULT_ORGANIZATION_SLUG: ${SENTINEL_DEFAULT_ORGANIZATION_SLUG:-default}
+      SENTINEL_DEFAULT_ORGANIZATION_NAME: ${SENTINEL_DEFAULT_ORGANIZATION_NAME:-SentinelAI Workspace}
+      SENTINEL_BOOTSTRAP_ADMIN_EMAIL: ${SENTINEL_BOOTSTRAP_ADMIN_EMAIL:-}
+      SENTINEL_BOOTSTRAP_ADMIN_PASSWORD: ${SENTINEL_BOOTSTRAP_ADMIN_PASSWORD:-}
+      MAX_UPLOAD_BYTES: ${MAX_UPLOAD_BYTES:-10485760}
+      MAX_UPLOAD_ROWS: ${MAX_UPLOAD_ROWS:-20000}
+      RETENTION_DAYS: ${RETENTION_DAYS:-90}
+      ACCESS_TOKEN_MINUTES: ${ACCESS_TOKEN_MINUTES:-15}
+      REFRESH_TOKEN_HOURS: ${REFRESH_TOKEN_HOURS:-8}
+      UPLOAD_DIR: /app/.data/uploads
+      ML_ARTIFACT_DIR: /app/.data/ml
+      CORS_ORIGINS: "${CORS_ORIGINS:-http://127.0.0.1:8080,http://localhost:8080}"
+    volumes:
+      - app_data:/app/.data
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    ports:
+      - "${API_BIND_ADDRESS:-127.0.0.1:8001}:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      db-provision:
+        condition: service_completed_successfully
+      db-migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/ready', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+
+  worker: &worker_service
+    build: ./backend
+    command: ["celery", "-A", "app.workers.celery_app:celery_app", "worker", "--loglevel=INFO", "--concurrency=2"]
+    environment:
+      SENTINEL_ENV: ${SENTINEL_ENV:-development}
+      SENTINEL_COMPONENT: worker
+      SECRET_KEY: ${SECRET_KEY:-dev-insecure-change-me}
+      CLOUD_CONNECTOR_ENCRYPTION_KEY: ${CLOUD_CONNECTOR_ENCRYPTION_KEY:-}
+      DATABASE_URL: postgresql+psycopg://sentinel_runtime:${POSTGRES_APP_PASSWORD:-sentinel_runtime_dev_only}@postgres:5432/sentinel
+      REDIS_URL: redis://redis:6379/0
+      SENTINEL_JOB_RUNNER: celery
+      CORS_ORIGINS: "${CORS_ORIGINS:-http://127.0.0.1:8080,http://localhost:8080}"
+      SENTINEL_DEFAULT_ORGANIZATION_SLUG: ${SENTINEL_DEFAULT_ORGANIZATION_SLUG:-default}
+      SENTINEL_DEFAULT_ORGANIZATION_NAME: ${SENTINEL_DEFAULT_ORGANIZATION_NAME:-SentinelAI Workspace}
+      MAX_UPLOAD_BYTES: ${MAX_UPLOAD_BYTES:-10485760}
+      MAX_UPLOAD_ROWS: ${MAX_UPLOAD_ROWS:-20000}
+      RETENTION_DAYS: ${RETENTION_DAYS:-90}
+      ACCESS_TOKEN_MINUTES: ${ACCESS_TOKEN_MINUTES:-15}
+      REFRESH_TOKEN_HOURS: ${REFRESH_TOKEN_HOURS:-8}
+      UPLOAD_DIR: /app/.data/uploads
+      ML_ARTIFACT_DIR: /app/.data/ml
+    volumes:
+      - app_data:/app/.data
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    depends_on:
+      postgres:
+        condition: service_healthy
+      db-provision:
+        condition: service_completed_successfully
+      db-migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  celery-beat:
+    <<: *worker_service
+    command: ["celery", "-A", "app.workers.celery_app:celery_app", "beat", "--loglevel=INFO"]
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  backup:
+    image: postgres:16-alpine
+    profiles: ["operations"]
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-sentinel}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-sentinel_dev_only}
+      POSTGRES_DB: ${POSTGRES_DB:-sentinel}
+    volumes:
+      - app_data:/source-data:ro
+      - ./backups:/backups
+    depends_on:
+      postgres:
+        condition: service_healthy
+    entrypoint: ["sh", "-ec"]
+    command:
+      - |
+        stamp="$$(date -u +%Y%m%dT%H%M%SZ)"
+        db_file="/backups/db-$$stamp.dump"
+        app_file="/backups/app-data-$$stamp.tar.gz"
+        export PGPASSWORD="$$POSTGRES_PASSWORD"
+        pg_dump -h postgres -U "$$POSTGRES_USER" -d "$$POSTGRES_DB" -Fc > "$$db_file"
+        pg_restore --list "$$db_file" >/dev/null
+        tar -czf "$$app_file" -C /source-data .
+        tar -tzf "$$app_file" >/dev/null
+        db_sha="$$(sha256sum "$$db_file" | cut -d ' ' -f 1)"
+        app_sha="$$(sha256sum "$$app_file" | cut -d ' ' -f 1)"
+        printf '{"created_at":"%s","database_file":"%s","database_sha256":"%s","app_data_file":"%s","app_data_sha256":"%s"}\n' "$$stamp" "$${db_file##*/}" "$$db_sha" "$${app_file##*/}" "$$app_sha" > "/backups/manifest-$$stamp.json"
+        echo "Backup verified: $$stamp"
+
+  restore:
+    image: postgres:16-alpine
+    profiles: ["operations"]
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-sentinel}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-sentinel_dev_only}
+      POSTGRES_DB: ${POSTGRES_DB:-sentinel}
+    volumes:
+      - app_data:/source-data
+      - ./backups:/backups:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    entrypoint: ["sh", "-c"]
+    command: ["exit 0"]
+
+  prometheus:
+    image: prom/prometheus:v3.15.1
+    profiles: ["monitoring"]
+    environment:
+      METRICS_TOKEN: ${METRICS_TOKEN:-}
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        if [ -z "$$METRICS_TOKEN" ]; then echo "Set a private METRICS_TOKEN before starting monitoring." >&2; exit 1; fi
+        umask 077
+        printf '%s' "$$METRICS_TOKEN" > /run/metrics-secrets/metrics_token
+        exec /bin/prometheus --config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/prometheus --storage.tsdb.retention.time=30d
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus_data:/prometheus
+    tmpfs:
+      - /run/metrics-secrets:rw,noexec,nosuid,size=1m,uid=65534,gid=65534,mode=0700
+    ports:
+      - "127.0.0.1:9090:9090"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
+  app_data:
+  prometheus_data:

@@ -1,0 +1,40 @@
+{
+  "value": [
+    {
+      "eventTimestamp": "2026-10-23T12:00:00Z",
+      "eventDataId": "synthetic-azure-role-001",
+      "operationName": {
+        "value": "Microsoft.Authorization/roleAssignments/write"
+      },
+      "category": {
+        "value": "Administrative"
+      },
+      "caller": "synthetic-operator@example.invalid",
+      "callerIpAddress": "192.0.2.45",
+      "resourceId": "/subscriptions/synthetic-sub/resourceGroups/demo/providers/Microsoft.Authorization/roleAssignments/demo",
+      "subscriptionId": "synthetic-sub",
+      "tenantId": "synthetic-tenant",
+      "status": {
+        "value": "Succeeded"
+      }
+    },
+    {
+      "eventTimestamp": "2026-10-23T12:01:00Z",
+      "eventDataId": "synthetic-azure-read-002",
+      "operationName": {
+        "value": "Microsoft.Compute/virtualMachines/read"
+      },
+      "category": {
+        "value": "Administrative"
+      },
+      "caller": "synthetic-operator@example.invalid",
+      "callerIpAddress": "192.0.2.45",
+      "resourceId": "/subscriptions/synthetic-sub/resourceGroups/demo/providers/Microsoft.Compute/virtualMachines/demo",
+      "subscriptionId": "synthetic-sub",
+      "tenantId": "synthetic-tenant",
+      "status": {
+        "value": "Succeeded"
+      }
+    }
+  ]
+}

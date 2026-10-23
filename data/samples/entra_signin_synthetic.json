@@ -1,0 +1,39 @@
+{
+  "value": [
+    {
+      "id": "synthetic-entra-risk-001",
+      "createdDateTime": "2026-10-23T12:00:00Z",
+      "userPrincipalName": "synthetic-user@example.invalid",
+      "userId": "synthetic-user-id",
+      "ipAddress": "192.0.2.46",
+      "appDisplayName": "Synthetic Admin Portal",
+      "resourceDisplayName": "Synthetic Directory",
+      "riskLevelAggregated": "high",
+      "status": {
+        "errorCode": 0
+      },
+      "deviceDetail": {
+        "deviceId": "synthetic-device-01",
+        "displayName": "Synthetic workstation",
+        "browser": "Synthetic browser"
+      }
+    },
+    {
+      "id": "synthetic-entra-failure-002",
+      "createdDateTime": "2026-10-23T12:01:00Z",
+      "userPrincipalName": "synthetic-user@example.invalid",
+      "userId": "synthetic-user-id",
+      "ipAddress": "192.0.2.46",
+      "appDisplayName": "Synthetic Admin Portal",
+      "resourceDisplayName": "Synthetic Directory",
+      "status": {
+        "errorCode": 50126,
+        "failureReason": "Synthetic invalid credentials"
+      },
+      "deviceDetail": {
+        "deviceId": "synthetic-device-01",
+        "displayName": "Synthetic workstation"
+      }
+    }
+  ]
+}
