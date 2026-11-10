@@ -1,7 +1,8 @@
 from datetime import UTC, datetime, timedelta
+from typing import Any
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session, selectinload
 
@@ -36,6 +37,52 @@ def event_to_dict(event: SecurityEvent) -> dict:
         "attributes": event.attributes or {},
         "username": (event.attributes or {}).get("username"),
     }
+
+
+_WINDOW_COLUMNS = (
+    SecurityEvent.id,
+    SecurityEvent.event_time,
+    SecurityEvent.event_type,
+    SecurityEvent.src_ip,
+    SecurityEvent.dst_ip,
+    SecurityEvent.src_port,
+    SecurityEvent.dst_port,
+    SecurityEvent.host_id,
+    SecurityEvent.severity,
+    SecurityEvent.attributes,
+)
+
+
+def window_row_to_dict(row: Any) -> dict:
+    attributes = row.attributes or {}
+    return {
+        "id": row.id,
+        "event_time": row.event_time,
+        "event_type": row.event_type,
+        "src_ip": str(row.src_ip) if row.src_ip else None,
+        "dst_ip": str(row.dst_ip) if row.dst_ip else None,
+        "src_port": row.src_port,
+        "dst_port": row.dst_port,
+        "host_id": row.host_id,
+        "severity": row.severity,
+        "attributes": attributes,
+        "username": attributes.get("username"),
+    }
+
+
+def load_detection_window(db: Session, job_id: UUID, lookback: datetime) -> list[dict]:
+    """Load the job's events plus the look-back window as plain dicts.
+
+    Only the columns the detectors read are selected. Loading full ORM entities
+    here kept every recent event, including its raw payload, in the session for
+    each ingestion job and live batch, which dominated worker memory.
+    """
+    rows = db.execute(
+        select(*_WINDOW_COLUMNS).where(
+            or_(SecurityEvent.event_time >= lookback, SecurityEvent.ingestion_job_id == job_id)
+        )
+    )
+    return [window_row_to_dict(row) for row in rows]
 
 
 def load_enabled_specs(db: Session) -> list[dict]:
@@ -213,13 +260,13 @@ def correlate_new(db: Session, detection: Detection) -> None:
 
 
 def run_detection_for_job(db: Session, job_id: UUID) -> int:
-    events = db.scalars(select(SecurityEvent).where(SecurityEvent.ingestion_job_id == job_id)).all()
-    if not events:
+    has_events = db.scalar(
+        select(SecurityEvent.id).where(SecurityEvent.ingestion_job_id == job_id).limit(1)
+    )
+    if has_events is None:
         return 0
     lookback = datetime.now(UTC) - timedelta(hours=2)
-    extra = db.scalars(select(SecurityEvent).where(SecurityEvent.event_time >= lookback)).all()
-    merged = {event.id: event for event in [*extra, *events]}
-    as_dicts = [event_to_dict(event) for event in merged.values()]
+    as_dicts = load_detection_window(db, job_id, lookback)
     created = 0
     for spec in load_enabled_specs(db):
         if spec.get("rule_id") == "port_scan_like" or spec.get("unique_field") == "dst_port":
