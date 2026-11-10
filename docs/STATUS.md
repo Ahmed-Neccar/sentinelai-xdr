@@ -192,3 +192,79 @@ The Remote Desktop and Word-to-PowerShell rules were validated against controlle
 - Compared official provider pricing and prerequisites. Selected AWS CloudTrail Event History as the first live integration candidate: the `LookupEvents` API for the built-in 90-day management-event history has no CloudTrail charge. No AWS account exists yet, so live provider validation is blocked until the user creates/accesses an account and supplies a narrowly scoped `cloudtrail:LookupEvents` credential through the local UI. No AWS resources or paid CloudTrail features were created.
 - Ran the project's ARP-only host discovery against the active private Wi-Fi `/24`. It returned the local host and gateway only; no second client was visible. This confirms basic ARP visibility on that link, but does not establish phone-hotspot client-to-client visibility or isolation.
 - The real scan exposed a bug where the scanner compared an IP-address string against an IP network. Fixed `sensor/network_discovery.py` to parse the response before membership testing. Verification: all 15 `sensor/tests/test_network_discovery.py` tests passed and Ruff passed; the ARP-only scan then completed with two responders.
+
+## Update — 2026-10-24 (user-confirmed local validation and production boundary)
+
+- The user confirmed AWS CloudTrail events are visible in SentinelAI after polling. This validates the configured AWS path in this local lab; it is not evidence of Azure/Entra validation or a production deployment.
+- The user confirmed the Windows sensor/controller was started and later confirmed that Windows events are listed and the source filter now works. The Devices view showed the Ahmed host seen within the last two minutes and its event count increased from 16,666 to 16,671. This confirms recent sensor telemetry/heartbeat; it does not by itself prove every optional Windows audit category is enabled.
+- `docs/OPERATIONS.md` was corrected to reflect current OIDC and read-only cloud-polling implementation and to state what remains unverified for commercial production.
+- Next production-readiness milestone: perform a backup/restore rehearsal only against an isolated clone, then record measured recovery time and data-loss window. Do not run `scripts/restore.ps1` against the user's active workspace as a test. Follow with encrypted off-host backup/key recovery, alert delivery/on-call, load and tenant-isolation validation, detection evaluation, and independent security review.
+- No application code, database, or running service was changed in this update. No tests were run for the documentation-only correction.
+
+## Update — 2026-10-24 (sensor identity proof)
+
+- Added a per-installation Ed25519 signing key stored under ignored `sensor/runtime/`; the key does not leave the host.
+- Sensor-only live session starts pin the key to the registered sensor after verifying a signed request. Heartbeats, event batches, and session finishes now require a fresh signature over the HTTP method, path, sensor ID, timestamp, and exact request body.
+- Added migration 009 to store the pinned public key and included a public-key fingerprint in the administrator sensor-registration response. Older registrations adopt a key after both server and sensor software are upgraded and the sensor starts with its existing dedicated credential.
+- This is trust-on-first-use device identity. It does not provide hardware-backed attestation or protect the private key from an administrator who can read the Windows project directory. Live signed-session compatibility remains unverified until the updated controller reconnects.
+- Migration 009 was applied to the local database; the API reports ready with database and Redis healthy. The sensor virtual environment now has `cryptography==50.0.2`. No sensor/controller process was running at verification time, so signed enrollment and live event forwarding still need confirmation after the elevated controller is started.
+
+## Update — 2026-10-24 (isolated backup/restore rehearsal)
+
+- Verified the existing 2026-10-23 backup manifest checksums and safely listed/extracted its app-data archive in an ephemeral container. The database restored successfully in an isolated, network-disabled PostgreSQL container, but its Alembic revision was 007; do not use that older snapshot to recover the current deployment without applying/reviewing migrations.
+- Created a fresh backup from the running deployment with `scripts/backup.ps1`; manifest SHA-256 verification passed. The new backup is `backups/manifest-20261024T032658Z.json`.
+- Repeated the rehearsal using the fresh backup. Database restore completed in a separate, disposable, network-disabled PostgreSQL container; verification found 24 application tables and Alembic revision 009. The app-data archive checksum, listing, and extraction also passed in an ephemeral container.
+- The active database, app-data volume, and application services were not modified or restarted by the rehearsal. Temporary containers were removed.
+- Recovery duration and recovery-point objective were not formally measured. The verified backup remains on the same machine; encrypted off-host storage and key recovery are still outstanding.
+
+## Update — 2026-10-24 (off-site backup preparation)
+
+- Added an S3 uploader that verifies the local manifest and SHA-256 values before sending the database dump, app-data archive, and manifest to a timestamped prefix. It explicitly requests SSE-S3 over TLS, verifies remote size/encryption/hash metadata, avoids replacing different existing objects, and uploads the manifest last as a completion marker.
+- Added least-privilege writer and bucket-policy templates, a private Windows credential-profile setup script, manual and daily scheduled backup wrappers, and operator guidance for public-access blocking, versioning, lifecycle expiry, and key protection.
+- AWS CLI and local AWS profiles are unavailable in this environment; the existing CloudTrail reader identity is intentionally read-only. A private S3 backup bucket was provisioned later in this update. No telemetry or backup file has been transmitted to AWS.
+- Live off-site backup remains pending: configure a dedicated writer identity and its local profile, choose an explicit retention policy, authorize backup transfer, then run the uploader and verify the S3 objects. S3 SSE-S3 encrypts at rest without separate KMS key charges; AWS account MFA and recovery remain necessary.
+
+## Update — 2026-10-24 (workstreams 1–5 validation)
+
+- Fixed a stale registered-sensor source-rename test to match the asynchronous endpoint and its current signed-enrollment contract. The focused test passed.
+- Hardened simulated response proposals: case/proposal rows are locked during creation and state transitions; a concurrent duplicate idempotency request now returns the existing matching proposal or a controlled 409 conflict.
+- Verification: all 68 runnable backend tests passed; three integration/platform tests were skipped because their PostgreSQL test roles/database or Windows symlink capability are not configured. All 20 sensor tests passed (the two spool-replay tests ran from an isolated copy in the permitted temporary workspace because their fixture writes under `sensor/.data`).
+- Live acceptance still required: two independent sensors with separate revocation/isolation; per-event Windows policy fixtures and volume/privacy checks; Azure/Entra live API validation; production tenant-separated correlation fixtures; and response target binding/security review. The S3 bucket exists, but writer credentials, lifecycle retention, and backup transfer are still pending.
+
+## Update — 2026-10-24 (S3 bucket provisioned)
+
+- Created `sentinelai-xdr-offsite-20261024-a84f39` in AWS `us-east-1`. It has Block Public Access enabled, Bucket owner enforced object ownership, versioning enabled, and default SSE-S3 encryption.
+- Applied a bucket policy denying non-TLS requests and requiring the `AES256` server-side encryption header for uploads under `sentinelai-xdr/`. The bucket is currently empty.
+- Remaining before backup operation: configure the 30-day lifecycle expiry for current/noncurrent versions, create a dedicated least-privilege writer identity, configure its credential locally without exposing it, and obtain authorization to upload the PostgreSQL dump and app-data archive to this bucket. No backup data has been sent to AWS.
+
+
+## Verification update — 2026-10-24 (workstreams 1–5)
+
+- Added signed sensor proof regression coverage for valid requests, body/path/identity tampering, timestamp expiry, and replay rejection.
+- Verification after the latest changes: backend 74 passed, 3 skipped; sensor 20 passed; Ruff passed for the modified API/test files; frontend Vite production build passed.
+- The local AWS bucket is private, versioned, TLS-only, and enforces SSE-S3 for the backup prefix. It remains empty pending the user's action-time decisions on retention expiry, dedicated writer access, and upload of named local backup files.
+
+- Follow-up: created the enabled sentinelai-xdr-30-day-retention lifecycle rule for the sentinelai-xdr/ prefix. Current versions expire after 30 days and noncurrent versions are permanently deleted after 30 days.
+- Created IAM user sentinelai-backup-writer with console access disabled and attached SentinelAIBackupWriterPolicy, scoped to s3:GetObject and s3:PutObject under this bucket prefix. No access key has been created or exposed. The user must create the key and store it locally with scripts/configure_aws_backup_profile.ps1 before off-site transfer can run.
+
+- Prepared current local snapshot manifest-20261024T054504Z.json; database dump (2,567,679 bytes) and app-data archive (430,838 bytes) both match their SHA-256 manifest entries. No S3 objects have been uploaded yet.
+
+- Retention note: because the bucket is versioned, expiry at day 30 creates a delete marker; that version is then deleted after a further 30 days as a noncurrent version. A version that remains current until expiration can therefore remain stored for about 60 days from upload.
+
+## Update — 2026-11-10 (first off-site backup uploaded and verified)
+
+- Fixed `scripts/upload_offsite_backup.py`: the writer identity has no `s3:ListBucket`, so S3 answers 403 rather than 404 for a key that does not exist and the pre-upload existence check aborted every first upload. A 403 is now treated as "absent" only before an upload; post-upload verification is unchanged and still rejects it. Checked against a stub S3 client (403/404 pre-check, 403 after upload, identical existing object, different existing object, 500).
+- `scripts/configure_aws_backup_profile.ps1` now refuses a secret that is not 40 valid characters, after a failed paste stored a 1-character secret.
+- The user created the `sentinelai-backup-writer` access key and stored it locally; `sts:GetCallerIdentity` confirmed the profile resolves to that user. The credential file ACL is limited to the user's Windows account.
+- Ran `scripts/offsite_backup.ps1`. A fresh local backup `manifest-20261110T093405Z.json` was created and uploaded to `s3://sentinelai-xdr-offsite-20261024-a84f39/sentinelai-xdr/20261110T093405Z/` (database dump 3,008,527 bytes, app-data archive 25,171,082 bytes, manifest 298 bytes).
+- Independent verification with the writer profile: each of the three objects was downloaded again and its SHA-256 and size match the local file and manifest; each reports SSE-S3 (`AES256`) and a version ID. The 2026-10-24 snapshot was not uploaded; the script always uploads a fresh backup.
+- Incident note: during setup an access key belonging to `sentinelai-cloudtrail-reader` (ID ending `WEHAU`) was pasted into the assistant chat. The user reported on 2026-11-10 that the key was deleted in IAM; this was not independently verified because the writer identity cannot read IAM. Whether the SentinelAI AWS cloud connector was re-keyed afterwards is not confirmed.
+- Still open: a restore test from S3 using a separate read/administrator identity, the daily off-site scheduled task (`scripts/install_offsite_backup_task.ps1`, not installed), measured recovery objectives, and cleanup of the two extra local backups from failed attempts on 2026-11-10. These changes are on branch `fix/offsite-upload-403-precheck`.
+
+## Update — 2026-11-10 (repository hygiene)
+
+- Committed the work that had accumulated since the handoff baseline as separate commits (signed sensor identity and migration 009, response-simulation locking, event source labels, app-data volume init, off-site S3 backup tooling, documentation) and merged the branch into `master`. The default branch of this repository is `master`, not `main`.
+- Before committing, fixed what the existing CI workflow would have rejected: nine Ruff findings in `app/api/v1/ingest.py` and `router.py` (import order, line length) and two MyPy errors in `ingest.py` and `events.py`. These are formatting and type-annotation changes only. Afterwards: backend 74 passed, 3 skipped; sensor 20 passed; `ruff check app tests` and `mypy app` pass. The running containers were not rebuilt for this.
+- `ruff check .` over the whole backend still reports 71 findings in `alembic/` (mostly line length in applied migrations). CI does not lint that directory and applied migrations were left untouched.
+- `Etik_Hacker_Vize_Notlari_Modul_1-3.2.md` in the project root is unrelated to this project and was deliberately left untracked.
+- No Git remote is configured and the GitHub CLI is not installed on this host, so `.github/workflows/ci.yml` has still never run. Source code exists only on this machine until a remote is added and pushed.
