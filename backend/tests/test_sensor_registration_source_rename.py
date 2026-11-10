@@ -1,3 +1,4 @@
+import base64
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -69,6 +70,8 @@ def test_registered_sensor_reuses_source_when_controller_name_changes(monkeypatc
         credential_user_id=user_id,
         data_source_id=source_id,
         status="active",
+        public_key=None,
+        last_request_counter=0,
         last_seen_at=None,
     )
     db = FakeDb(registration, source)
@@ -84,18 +87,30 @@ def test_registered_sensor_reuses_source_when_controller_name_changes(monkeypatc
     monkeypatch.setattr("app.api.v1.ingest.write_audit", lambda *_a, **_kw: None)
     monkeypatch.setattr("app.api.v1.ingest.client_ip", lambda _request: "127.0.0.1")
 
-    result = start_live_capture(
+    async def verify_sensor_proof(*_args, **_kwargs):
+        return 1
+
+    monkeypatch.setattr("app.api.v1.ingest._verify_sensor_proof", verify_sensor_proof)
+
+    coroutine = start_live_capture(
         LiveCaptureStart(
             source_name=f"Ahmed-live-sensor-{str(sensor_id)[:8]}",
             sensor_id=str(sensor_id),
             host_name="Ahmed",
             sensor_version="0.3.0",
             capabilities=["network.headers"],
+            sensor_public_key=base64.b64encode(bytes(32)).decode("ascii"),
         ),
         db,
         actor,
         request,
     )
+    try:
+        coroutine.send(None)
+    except StopIteration as completed:
+        result = completed.value
+    else:
+        raise AssertionError("The mocked start-live path unexpectedly suspended")
 
     assert result["data_source_id"] == source_id
     assert source.name == "Ahmed-live-sensor"

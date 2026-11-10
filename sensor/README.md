@@ -10,6 +10,8 @@ This is a bounded Nmap-style summary, not a full Nmap replacement: IPv6 host dis
 
 ## What it records
 
+Each sensor installation keeps a stable UUID, an Ed25519 signing key, and a monotonic request counter under `sensor/runtime/`. The private key stays on the Windows host; the API pins its public key during the first authenticated sensor start, verifies signatures on subsequent session starts, heartbeats, event batches, and finish requests, and rejects reused counters. Keep the project directory restricted to the Windows account that runs the sensor. Existing registrations without a pinned key adopt one on their next start after the sensor software and API are upgraded. This is first-use key pinning, not a hardware-backed identity or remote administrator approval workflow. If the signing key is lost or corrupted, or the counter file is deleted, an administrator must rotate that sensor's credential before it can pin/reset local identity state.
+
 - IPv4/IPv6 TCP connection attempts (initial SYN packets) and UDP packet headers
 - Source/destination IP address, source/destination port, protocol, observation time, and local adapter/host labels
 - Optional Windows Security events: successful logon (4624), failed logon (4625), and workstation unlock (4801), collected only after the sensor starts

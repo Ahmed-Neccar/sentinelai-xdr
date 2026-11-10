@@ -94,7 +94,7 @@ class SensorSupervisor:
             self.process = None
 
             email, password = read_project_credentials()
-            api = ApiClient("http://127.0.0.1:8001", email, password)
+            api = ApiClient("http://127.0.0.1:8001", email, password, self.sensor_id)
             sessions = api.get("/api/v1/ingest/live/sessions?page_size=100")
             legacy_source_name = f"{platform.node()}-live-sensor"
             source_name = f"{legacy_source_name}-{self.sensor_id[:8]}"

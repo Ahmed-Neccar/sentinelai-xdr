@@ -16,4 +16,8 @@ if (-not (Test-Path -LiteralPath $python)) {
 if (-not (Test-Path -LiteralPath (Join-Path $PSScriptRoot '.env'))) {
     throw 'Project .env file was not found. Start the SentinelAI project setup first.'
 }
+& $python -c 'import cryptography'
+if ($LASTEXITCODE -ne 0) {
+    throw 'The sensor identity package is missing. Run .\sensor\.venv\Scripts\python.exe -m pip install -r sensor\requirements.txt, then start the controller again.'
+}
 & $python $controller

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import getpass
 import hashlib
 import json
@@ -10,6 +11,7 @@ import platform
 import queue
 import subprocess
 import sys
+import threading
 import time
 from datetime import UTC, datetime
 from pathlib import Path
@@ -17,6 +19,8 @@ from typing import Any
 from uuid import UUID, uuid4
 
 import httpx
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 try:
     from scapy.all import AsyncSniffer, IP, IPv6, TCP, UDP, conf, get_if_list
@@ -25,7 +29,8 @@ except ImportError as exc:
 
 from windows_security import WindowsSecurityLog
 
-SENSOR_VERSION = "0.3.0"
+SENSOR_VERSION = "0.4.0"
+_COUNTER_LOCK = threading.Lock()
 
 
 def get_or_create_sensor_id() -> str:
@@ -42,13 +47,61 @@ def get_or_create_sensor_id() -> str:
         return value
 
 
+def get_or_create_sensor_key() -> tuple[Ed25519PrivateKey, str]:
+    """Persist a per-installation Ed25519 key and return its base64 raw public key."""
+    runtime_dir = Path(__file__).resolve().parent / "runtime"
+    key_path = runtime_dir / "sensor-signing-key.pem"
+    runtime_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        private_key = serialization.load_pem_private_key(key_path.read_bytes(), password=None)
+        if not isinstance(private_key, Ed25519PrivateKey):
+            raise RuntimeError("Stored sensor signing key has an unsupported format.")
+    except FileNotFoundError:
+        private_key = Ed25519PrivateKey.generate()
+        pem = private_key.private_bytes(
+            serialization.Encoding.PEM,
+            serialization.PrivateFormat.PKCS8,
+            serialization.NoEncryption(),
+        )
+        key_path.write_bytes(pem)
+        try:
+            key_path.chmod(0o600)
+        except OSError:
+            pass
+    public_key = private_key.public_key().public_bytes(
+        serialization.Encoding.Raw, serialization.PublicFormat.Raw
+    )
+    return private_key, base64.b64encode(public_key).decode("ascii")
+
+
+def next_sensor_request_counter() -> int:
+    """Persist a strictly increasing request counter to prevent signed-request replay."""
+    runtime_dir = Path(__file__).resolve().parent / "runtime"
+    counter_path = runtime_dir / "sensor-request-counter"
+    runtime_dir.mkdir(parents=True, exist_ok=True)
+    with _COUNTER_LOCK:
+        try:
+            previous = int(counter_path.read_text(encoding="ascii").strip())
+        except FileNotFoundError:
+            previous = 0
+        except ValueError as exc:
+            raise RuntimeError("Sensor request counter is damaged; rotate the sensor credential to re-enroll.") from exc
+        current = previous + 1
+        temporary = counter_path.with_suffix(".tmp")
+        temporary.write_text(str(current), encoding="ascii")
+        temporary.replace(counter_path)
+        return current
+
+
 class SensorAuthorizationError(RuntimeError):
     """The server rejected a sensor credential or live-session authorization."""
 
 
 class ApiClient:
-    def __init__(self, base_url: str, email: str, password: str) -> None:
+    def __init__(self, base_url: str, email: str, password: str, sensor_id: str) -> None:
         self.base_url = base_url.rstrip("/")
+        self.sensor_id = sensor_id
+        self.private_key, self.public_key = get_or_create_sensor_key()
         self.session = httpx.Client(timeout=10.0, follow_redirects=False)
         response = self.session.post(
             f"{self.base_url}/api/v1/auth/login",
@@ -59,10 +112,14 @@ class ApiClient:
         self.access_token = response.json()["access_token"]
 
     def post(self, path: str, payload: dict) -> dict:
+        body = json.dumps(payload, separators=(",", ":"), sort_keys=True, ensure_ascii=False).encode("utf-8")
+        headers = {"Authorization": f"Bearer {self.access_token}", "Content-Type": "application/json"}
+        if path.startswith("/api/v1/ingest/live/"):
+            headers.update(self._sensor_proof(path, body))
         response = self.session.post(
             f"{self.base_url}{path}",
-            json=payload,
-            headers={"Authorization": f"Bearer {self.access_token}"},
+            content=body,
+            headers=headers,
         )
         if response.status_code == 401:
             refresh = self.session.post(f"{self.base_url}/api/v1/auth/refresh")
@@ -71,10 +128,13 @@ class ApiClient:
                     raise SensorAuthorizationError("Sensor credentials are no longer authorized.")
                 raise RuntimeError(f"Session refresh failed ({refresh.status_code})")
             self.access_token = refresh.json()["access_token"]
+            headers["Authorization"] = f"Bearer {self.access_token}"
+            if path.startswith("/api/v1/ingest/live/"):
+                headers.update(self._sensor_proof(path, body))
             response = self.session.post(
                 f"{self.base_url}{path}",
-                json=payload,
-                headers={"Authorization": f"Bearer {self.access_token}"},
+                content=body,
+                headers=headers,
             )
         if response.status_code in (401, 403, 409):
             raise SensorAuthorizationError(
@@ -83,6 +143,18 @@ class ApiClient:
         if response.is_error:
             raise RuntimeError(f"API request failed ({response.status_code}): {safe_message(response)}")
         return response.json()
+
+    def _sensor_proof(self, path: str, body: bytes) -> dict[str, str]:
+        timestamp = str(int(time.time()))
+        counter = str(next_sensor_request_counter())
+        message = f"{self.sensor_id}\n{counter}\n{timestamp}\nPOST\n{path}\n".encode() + body
+        signature = self.private_key.sign(message)
+        return {
+            "X-Sentinel-Sensor-ID": self.sensor_id,
+            "X-Sentinel-Counter": counter,
+            "X-Sentinel-Timestamp": timestamp,
+            "X-Sentinel-Signature": base64.b64encode(signature).decode("ascii"),
+        }
 
     def get(self, path: str) -> Any:
         response = self.session.get(
@@ -329,7 +401,8 @@ def main() -> int:
         email = input("SentinelAI login email: ").strip()
         password = getpass.getpass("SentinelAI login password: ")
     try:
-        api = ApiClient(args.server, email, password)
+        sensor_id = args.sensor_id or get_or_create_sensor_id()
+        api = ApiClient(args.server, email, password, sensor_id)
         capabilities = ["network.headers"]
         if args.windows_events:
             capabilities.append("windows.logon_events")
@@ -341,7 +414,8 @@ def main() -> int:
             "/api/v1/ingest/live/start",
             {
                 "source_name": args.source_name,
-                "sensor_id": args.sensor_id or get_or_create_sensor_id(),
+                "sensor_id": sensor_id,
+                "sensor_public_key": api.public_key,
                 "host_name": platform.node()[:255],
                 "sensor_version": SENSOR_VERSION,
                 "capabilities": capabilities,

@@ -1,8 +1,14 @@
+import base64
+import binascii
+import hashlib
+import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Annotated
 from uuid import UUID, uuid4
 
+from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from fastapi import APIRouter, Depends, File, Form, Header, Request, UploadFile
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import func, or_, select
@@ -55,6 +61,7 @@ class LiveCaptureStart(BaseModel):
     host_name: str | None = Field(default=None, max_length=255)
     sensor_version: str | None = Field(default=None, max_length=32)
     capabilities: list[str] = Field(default_factory=list, max_length=16)
+    sensor_public_key: str | None = Field(default=None, min_length=40, max_length=64)
 
 
 class LiveCaptureBatch(BaseModel):
@@ -200,7 +207,7 @@ async def upload(
 
 
 @router.post("/ingest/live/start", status_code=201)
-def start_live_capture(
+async def start_live_capture(
     payload: LiveCaptureStart, db: DbDep, actor: LiveSensorUser, request: Request
 ) -> dict:
     sensor_only = not _can_manage_all_live_sessions(actor)
@@ -248,6 +255,23 @@ def start_live_capture(
                 )
             source = registered_source
             source_config = dict(source.config or {})
+
+    if sensor_only:
+        _decode_sensor_public_key(payload.sensor_public_key)
+        pinned_key: str | None
+        if registration is not None and registration.public_key is not None:
+            if registration.public_key != payload.sensor_public_key:
+                raise AppError(
+                    409,
+                    "sensor_key_mismatch",
+                    "This sensor key is already bound to another identity",
+                )
+            pinned_key = registration.public_key
+        else:
+            pinned_key = payload.sensor_public_key
+        request_counter = await _verify_sensor_proof(request, payload.sensor_id or "", pinned_key)
+        if registration is not None and request_counter <= registration.last_request_counter:
+            raise AppError(409, "sensor_request_replayed", "The sensor request was already used")
 
     if sensor_only and source is not None:
         bound_user = source_config.get("sensor_credential_user_id")
@@ -356,6 +380,8 @@ def start_live_capture(
                 pg_insert(SensorRegistration)
                 .values(
                     sensor_id=sensor_uuid,
+                    public_key=payload.sensor_public_key,
+                    last_request_counter=request_counter,
                     credential_user_id=actor.id,
                     data_source_id=source.id,
                     status="active",
@@ -372,6 +398,9 @@ def start_live_capture(
                 )
         else:
             registration.last_seen_at = now
+            if registration.public_key is None:
+                registration.public_key = payload.sensor_public_key
+            registration.last_request_counter = request_counter
     job = IngestionJob(
         data_source_id=source.id,
         created_by=actor.id,
@@ -398,17 +427,20 @@ def start_live_capture(
 
 
 @router.post("/ingest/live/{job_id}/heartbeat")
-def live_capture_heartbeat(
+async def live_capture_heartbeat(
     job_id: UUID,
     payload: LiveCaptureDiagnostics,
     db: DbDep,
     actor: LiveSensorUser,
+    request: Request,
 ) -> dict:
     job = db.get(IngestionJob, job_id)
     if job is None or not job.original_filename.startswith("live-capture:"):
         raise AppError(404, "not_found", "Live capture session not found")
     _assert_live_session_access(job, actor)
     registration = _assert_registered_sensor_session(db, job, actor)
+    if registration is not None:
+        await _verify_registered_sensor_request(request, registration)
     if job.status != "running":
         raise AppError(409, "capture_not_running", "Live capture session is not running")
     job.last_heartbeat_at = datetime.now(UTC)
@@ -507,6 +539,12 @@ def list_registered_sensors(db: DbDep, _: AdminUser) -> list[dict]:
     return [
         {
             "sensor_id": registration.sensor_id,
+            "identity_verified": registration.public_key is not None,
+            "key_fingerprint": (
+                hashlib.sha256(_decode_sensor_public_key(registration.public_key)).hexdigest()[:24]
+                if registration.public_key
+                else None
+            ),
             "credential_email": email,
             "source_name": source.name,
             "status": registration.status,
@@ -590,6 +628,8 @@ def rotate_sensor_credential(
     user.is_active = True
     registration.status = "active"
     registration.revoked_at = None
+    registration.public_key = None
+    registration.last_request_counter = 0
     now = datetime.now(UTC)
     jobs = db.scalars(
         select(IngestionJob).where(
@@ -624,8 +664,8 @@ def rotate_sensor_credential(
 
 
 @router.post("/ingest/live/{job_id}/events", status_code=202)
-def ingest_live_batch(
-    job_id: UUID, payload: LiveCaptureBatch, db: DbDep, actor: LiveSensorUser
+async def ingest_live_batch(
+    job_id: UUID, payload: LiveCaptureBatch, db: DbDep, actor: LiveSensorUser, request: Request
 ) -> dict:
     # Import lazily: the ingestion service imports this detector module too.
     from app.detection.run import run_detection_for_job
@@ -637,6 +677,8 @@ def ingest_live_batch(
         raise AppError(409, "capture_not_running", "Live capture session is not running")
     _assert_live_session_access(job, actor)
     registration = _assert_registered_sensor_session(db, job, actor)
+    if registration is not None:
+        await _verify_registered_sensor_request(request, registration)
 
     accepted = duplicates = 0
     quarantined: list[dict] = []
@@ -708,12 +750,16 @@ def ingest_live_batch(
 
 
 @router.post("/ingest/live/{job_id}/finish")
-def finish_live_capture(job_id: UUID, db: DbDep, actor: LiveSensorUser, request: Request) -> dict:
+async def finish_live_capture(
+    job_id: UUID, db: DbDep, actor: LiveSensorUser, request: Request
+) -> dict:
     job = db.get(IngestionJob, job_id)
     if job is None:
         raise AppError(404, "not_found", "Live capture session not found")
     _assert_live_session_access(job, actor)
-    _assert_registered_sensor_session(db, job, actor)
+    registration = _assert_registered_sensor_session(db, job, actor)
+    if registration is not None:
+        await _verify_registered_sensor_request(request, registration)
     if not job.original_filename.startswith("live-capture:"):
         raise AppError(400, "not_live_capture", "This job is not a live capture session")
     if job.status == "running":
@@ -764,6 +810,75 @@ def job_quarantine(job_id: UUID, db: DbDep, _: AllowedList) -> dict:
 
 def _can_manage_all_live_sessions(actor: TokenUser) -> bool:
     return ADMIN in actor.roles or ANALYST in actor.roles
+
+
+def _decode_sensor_public_key(value: str | None) -> bytes:
+    if not value:
+        raise AppError(
+            400, "sensor_key_required", "A sensor signing key is required for enrollment"
+        )
+    try:
+        decoded = base64.b64decode(value, validate=True)
+        Ed25519PublicKey.from_public_bytes(decoded)
+        return decoded
+    except (ValueError, binascii.Error):
+        raise AppError(400, "sensor_key_invalid", "The sensor signing key is invalid") from None
+
+
+async def _verify_registered_sensor_request(
+    request: Request, registration: SensorRegistration
+) -> None:
+    counter = await _verify_sensor_proof(
+        request, str(registration.sensor_id), registration.public_key
+    )
+    if counter <= registration.last_request_counter:
+        raise AppError(409, "sensor_request_replayed", "The sensor request was already used")
+    registration.last_request_counter = counter
+
+
+async def _verify_sensor_proof(request: Request, sensor_id: str, public_key: str | None) -> int:
+    """Verify a time-bounded Ed25519 signature over the exact HTTP request body."""
+    if not public_key:
+        raise AppError(
+            409,
+            "sensor_key_not_enrolled",
+            "This sensor has no registered signing key; rotate its credential to enroll it",
+        )
+    header_sensor_id = request.headers.get("x-sentinel-sensor-id", "")
+    timestamp = request.headers.get("x-sentinel-timestamp", "")
+    counter_header = request.headers.get("x-sentinel-counter", "")
+    signature = request.headers.get("x-sentinel-signature", "")
+    try:
+        if len(timestamp) != 10 or not timestamp.isascii() or not timestamp.isdigit():
+            raise ValueError
+        if not counter_header.isascii() or not counter_header.isdigit() or len(counter_header) > 19:
+            raise ValueError
+        issued_at = int(timestamp)
+        counter = int(counter_header)
+        if counter > 9_223_372_036_854_775_807:
+            raise ValueError
+        signature_bytes = base64.b64decode(signature, validate=True)
+        key_bytes = _decode_sensor_public_key(public_key)
+    except (ValueError, binascii.Error):
+        raise AppError(
+            401, "sensor_proof_invalid", "The sensor identity proof is invalid"
+        ) from None
+    if counter < 1 or header_sensor_id != sensor_id or abs(time.time() - issued_at) > 60:
+        raise AppError(
+            401, "sensor_proof_expired", "The sensor identity proof is missing or expired"
+        )
+    method = request.method.upper()
+    message = (
+        f"{sensor_id}\n{counter}\n{timestamp}\n{method}\n{request.url.path}\n".encode()
+        + await request.body()
+    )
+    try:
+        Ed25519PublicKey.from_public_bytes(key_bytes).verify(signature_bytes, message)
+    except (InvalidSignature, ValueError):
+        raise AppError(
+            401, "sensor_proof_invalid", "The sensor identity proof is invalid"
+        ) from None
+    return counter
 
 
 def _assert_live_session_access(job: IngestionJob, actor: TokenUser) -> None:

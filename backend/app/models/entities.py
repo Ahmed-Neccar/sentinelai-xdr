@@ -169,6 +169,10 @@ class SensorRegistration(TenantOwned, Base):
     )
 
     sensor_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
+    public_key: Mapped[str | None] = mapped_column(Text, nullable=True)
+    last_request_counter: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
     credential_user_id: Mapped[UUID] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )
