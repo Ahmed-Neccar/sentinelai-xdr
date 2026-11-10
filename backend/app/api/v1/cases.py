@@ -6,6 +6,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import DbDep, client_ip, require_roles
@@ -244,7 +245,7 @@ def propose_response_simulation(
     actor: Writer,
     request: Request,
 ) -> dict:
-    case = db.get(Case, case_id)
+    case = db.scalar(select(Case).where(Case.id == case_id).with_for_update())
     if case is None:
         raise AppError(404, "not_found", "Case not found")
     if payload.action_type not in SIMULATED_ACTIONS:
@@ -294,7 +295,30 @@ def propose_response_simulation(
         expires_at=datetime.now(UTC) + timedelta(days=7),
     )
     db.add(simulation)
-    db.flush()
+    try:
+        db.flush()
+    except IntegrityError:
+        db.rollback()
+        if not payload.idempotency_key:
+            raise
+        existing = db.scalar(
+            select(ResponseSimulation).where(
+                ResponseSimulation.idempotency_key == payload.idempotency_key
+            )
+        )
+        if existing is not None and _same_response_request(
+            existing,
+            case_id=case.id,
+            action_type=payload.action_type,
+            target=target,
+            rationale=rationale,
+        ):
+            return _response_simulation(existing)
+        raise AppError(
+            409,
+            "idempotency_conflict",
+            "Idempotency key was already used for another simulation",
+        ) from None
     write_audit(
         db,
         actor_id=actor.id,
@@ -323,10 +347,12 @@ def reject_response_simulation(
     note: str = "",
 ) -> dict:
     simulation = db.scalar(
-        select(ResponseSimulation).where(
+        select(ResponseSimulation)
+        .where(
             ResponseSimulation.id == response_id,
             ResponseSimulation.case_id == case_id,
         )
+        .with_for_update()
     )
     if simulation is None:
         raise AppError(404, "not_found", "Response simulation not found")
@@ -381,10 +407,12 @@ def approve_response_simulation(
     request: Request,
 ) -> dict:
     simulation = db.scalar(
-        select(ResponseSimulation).where(
+        select(ResponseSimulation)
+        .where(
             ResponseSimulation.id == response_id,
             ResponseSimulation.case_id == case_id,
         )
+        .with_for_update()
     )
     if simulation is None:
         raise AppError(404, "not_found", "Response simulation not found")
@@ -433,10 +461,12 @@ def simulate_response(
     request: Request,
 ) -> dict:
     simulation = db.scalar(
-        select(ResponseSimulation).where(
+        select(ResponseSimulation)
+        .where(
             ResponseSimulation.id == response_id,
             ResponseSimulation.case_id == case_id,
         )
+        .with_for_update()
     )
     if simulation is None:
         raise AppError(404, "not_found", "Response simulation not found")
@@ -565,6 +595,22 @@ def _response_simulation(item: ResponseSimulation) -> dict:
         "simulated_at": item.simulated_at,
         "execution": "none; audit record only",
     }
+
+
+def _same_response_request(
+    item: ResponseSimulation,
+    *,
+    case_id: UUID,
+    action_type: str,
+    target: str,
+    rationale: str,
+) -> bool:
+    return (
+        item.case_id == case_id
+        and item.action_type == action_type
+        and item.target == target
+        and item.rationale == rationale
+    )
 
 
 def _case(case: Case) -> dict:
