@@ -8,7 +8,7 @@ from sqlalchemy import func, select
 from app.api.deps import DbDep, require_roles
 from app.core.errors import AppError
 from app.core.permissions import READ_EVENTS
-from app.models import SecurityEvent
+from app.models import DataSource, SecurityEvent
 from app.schemas.common import Page, TokenUser
 
 router = APIRouter(prefix="/events", tags=["events"])
@@ -67,7 +67,25 @@ def list_events(
         .offset((page - 1) * page_size)
         .limit(page_size)
     ).all()
-    return Page(items=[_event(e) for e in rows], page=page, page_size=page_size, total=total)
+    source_ids = {event.data_source_id for event in rows if event.data_source_id is not None}
+    sources = (
+        db.scalars(select(DataSource).where(DataSource.id.in_(source_ids))).all()
+        if source_ids
+        else []
+    )
+    sources_by_id = {source.id: source for source in sources}
+    return Page(
+        items=[
+            _event(
+                event,
+                sources_by_id.get(event.data_source_id) if event.data_source_id else None,
+            )
+            for event in rows
+        ],
+        page=page,
+        page_size=page_size,
+        total=total,
+    )
 
 
 @router.get("/{event_id}")
@@ -75,10 +93,15 @@ def get_event(event_id: UUID, db: DbDep, _: Reader) -> dict:
     event = db.get(SecurityEvent, event_id)
     if event is None:
         raise AppError(404, "not_found", "Event not found")
-    return _event(event, include_raw=True)
+    source = db.get(DataSource, event.data_source_id) if event.data_source_id else None
+    return _event(event, source=source, include_raw=True)
 
 
-def _event(event: SecurityEvent, include_raw: bool = False) -> dict:
+def _event(
+    event: SecurityEvent,
+    source: DataSource | None = None,
+    include_raw: bool = False,
+) -> dict:
     payload = {
         "id": event.id,
         "event_time": event.event_time,
@@ -94,6 +117,8 @@ def _event(event: SecurityEvent, include_raw: bool = False) -> dict:
         "schema_version": event.schema_version,
         "dedup_key": event.dedup_key,
         "data_source_id": event.data_source_id,
+        "source_name": source.name if source else None,
+        "source_type": source.source_type if source else None,
         "ingestion_job_id": event.ingestion_job_id,
     }
     if include_raw:
