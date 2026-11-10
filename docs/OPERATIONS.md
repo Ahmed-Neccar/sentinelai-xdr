@@ -67,6 +67,18 @@ An optional pinned Prometheus service and starter alert rules are included. Set 
 
 This is still not a complete monitoring service. Production operation needs alert delivery routing, durable/off-host metrics storage, and a tested on-call procedure for database/Redis health, worker backlog, ingestion lag, sensor heartbeat gaps, disk capacity, and backup failures.
 
+## Alert notifications
+
+Administrators add channels under **Notifications** (API: `/api/v1/notification-channels`). Three kinds are supported: a generic JSON webhook (optionally signed), a Slack-compatible incoming webhook (`{"text": ...}`), and a Telegram bot (`bot_token` plus `chat_id`). E-mail is not implemented. Each channel has a minimum severity (default `high`); a new detection at or above it queues one message per channel. Analysts can read channel status; only administrators can create, change, test, or delete channels, and every change is audited.
+
+A message contains the finding title, severity, rule ID, detector kind, detection and case IDs, and a note that it is a review signal. The finding summary can contain IP addresses, host names, and account names and is omitted unless **Include the finding summary** is enabled for that channel. Raw events are never sent. Treat any enabled channel as a transfer of that data to the receiving service.
+
+Delivery uses a database outbox: the queue row is written in the same transaction as the detection and Celery Beat triggers delivery every 30 seconds, so expect up to about 30 seconds of delay. A failed send is retried with backoff (1, 2, 4, 8 minutes) and marked failed after five attempts, with an audit record. Messages still unsent after 24 hours are dropped. At most 20 messages per organization are sent per run; a burst of findings is delivered over several runs, not discarded. Delivery history is kept for 30 days. Delivery is at-least-once: a receiver can see a duplicate if a send succeeded but its result could not be recorded.
+
+Destinations are stored encrypted with `CLOUD_CONNECTOR_ENCRYPTION_KEY` and never returned by the API. Requests are HTTPS only, do not follow redirects, and are refused when the host is an IP literal or resolves to a non-public address, so a channel cannot target loopback, the Compose network, or cloud metadata endpoints. The worker container therefore needs outbound HTTPS and DNS. For the generic webhook with a signing secret, verify `X-Sentinel-Signature: sha256=<hex>` as HMAC-SHA256 over `<X-Sentinel-Timestamp>.<raw body>` and reject old timestamps.
+
+Use **Send test** after creating a channel and confirm the message arrives. This covers detection alerts only: it does not report sensor heartbeat gaps, connector failures, failed backups, or service health, and it is not an on-call rota or escalation system.
+
 ## Current production boundary
 
 TOTP MFA and single-provider OIDC SSO are implemented. OIDC still requires validation against the operator's real identity provider, including account disablement and MFA policy. Read-only polling foundations exist for AWS CloudTrail, Azure Activity Log, and Microsoft Entra sign-ins. AWS CloudTrail polling and event visibility have been exercised in the local lab; Azure and Entra live polling still require separate test tenants and end-to-end validation. Provider access is read-only, but operators must verify the exact permissions, licensing, retention, and credential rotation for their accounts.
