@@ -2,8 +2,9 @@ FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1
 WORKDIR /app
-COPY requirements.txt ./requirements.txt
-RUN pip install --no-cache-dir --timeout=180 --retries=5 -r requirements.txt
+# Install from the hash-pinned lock so a rebuild cannot pull a newer transitive release.
+COPY requirements.lock ./requirements.lock
+RUN pip install --no-cache-dir --timeout=180 --retries=5 --require-hashes -r requirements.lock
 RUN addgroup --system --gid 10001 sentinel \
     && adduser --system --uid 10001 --ingroup sentinel sentinel \
     && mkdir -p /app/.data \
