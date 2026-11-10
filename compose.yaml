@@ -65,6 +65,22 @@ services:
         condition: service_completed_successfully
     restart: "no"
 
+  app-data-init:
+    build: ./backend
+    user: "0:0"
+    command: ["sh", "-c", "mkdir -p /app/.data/uploads /app/.data/ml && chown -R 10001:10001 /app/.data"]
+    volumes:
+      - app_data:/app/.data
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+    restart: "no"
+
   backend:
     build: ./backend
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
@@ -109,6 +125,8 @@ services:
         condition: service_completed_successfully
       db-migrate:
         condition: service_completed_successfully
+      app-data-init:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
     healthcheck:
@@ -152,6 +170,8 @@ services:
       db-provision:
         condition: service_completed_successfully
       db-migrate:
+        condition: service_completed_successfully
+      app-data-init:
         condition: service_completed_successfully
       redis:
         condition: service_healthy
