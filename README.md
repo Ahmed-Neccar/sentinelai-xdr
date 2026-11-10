@@ -1,24 +1,44 @@
 # SentinelAI XDR
 
-SentinelAI XDR is a defensive, locally deployable security monitoring prototype. It imports authorized JSON/CSV telemetry and can receive passive TCP/UDP header telemetry plus optional Windows Security logon, process-start, and selected endpoint/security events from its host sensor. It normalizes and stores events, runs transparent rules, correlates selected credential and network-discovery findings into cases, and provides an analyst dashboard. Rule hits are investigation signals, not proof of compromise. Automated response is disabled.
+SentinelAI XDR is a defensive, self-hosted security monitoring platform for a lab or small environment. It collects authorized endpoint, network, and cloud audit telemetry, normalizes it, runs transparent detection rules, groups related findings into cases, and gives analysts a console to investigate them.
 
-## Start the local lab
+**Status: lab prototype.** It runs and has been exercised on one machine, but it has not had an independent security review and is not approved for commercial production. Findings are review signals for an analyst, not proof of compromise. The product never isolates a host, blocks an address, or disables an account; response actions are recorded simulations only.
 
-Requirements: Docker Desktop with Compose v2 or newer.
+## What it does
+
+| Area | Included |
+|---|---|
+| Collection | JSON/CSV, Zeek, and Suricata EVE file import; a Windows host sensor for passive TCP/UDP header metadata and opt-in Windows Security events; read-only polling of AWS CloudTrail, Azure Activity Log, and Microsoft Entra sign-ins |
+| Detection | Versioned built-in rules with evidence-linked findings; correlation into cases by shared source, host, account, or resource inside a time window |
+| Investigation | Cases with assignment, priority, notes, status history, and CSV export of events and detections |
+| Notification | Webhook, Slack-compatible, and Telegram channels for new findings above a chosen severity |
+| Access control | Roles (administrator, analyst, auditor, ingestion service), TOTP MFA, single-provider OIDC SSO, audit log |
+| Isolation | Organization-scoped data with PostgreSQL row-level security and a non-superuser runtime role |
+| Operations | Backup and restore scripts, encrypted off-site copy to S3, encrypted `.env` backup, retention cleanup, optional Prometheus metrics |
+
+What it is not: a full EDR, a whole-network monitor (an ordinary Wi-Fi adapter sees only its own host's traffic), or an automated response system. The optional Isolation Forest anomaly score is not deployed and is not recommended in its current form; see the [evaluation](docs/PERFORMANCE_AND_ML_EVALUATION.md).
+
+## Quick start (local lab)
+
+Requirements: Docker Desktop with Compose v2, about 4 GB of free memory, Windows 10/11 for the host sensor (the server stack itself runs anywhere Docker does).
 
 1. Copy `.env.example` to `.env`.
-2. Replace `SECRET_KEY`, `MFA_ENCRYPTION_KEY`, `POSTGRES_PASSWORD`, `POSTGRES_APP_PASSWORD`, `POSTGRES_MIGRATOR_PASSWORD`, `SENTINEL_BOOTSTRAP_ADMIN_PASSWORD`, and `SENTINEL_SENSOR_PASSWORD` with private values. Generate `MFA_ENCRYPTION_KEY` as URL-safe base64 for 32 random bytes; use URL-safe passwords for the two database URLs. The sensor password must match the dedicated `ingestion_service` account you create below. Keep `.env` out of version control.
-3. Run `docker compose up --build` from the repository root.
-4. Open <http://127.0.0.1:8080>. The API is at <http://127.0.0.1:8001>; development OpenAPI docs are at `/docs`.
-5. Sign in with organization slug `default` and the bootstrap email/password you configured in `.env`.
-6. For a repeatable, clearly labeled walkthrough, import `data/samples/auth_and_network_synthetic.json` from **Ingestion**. This synthetic file creates example findings; it is not a real network scan, incident, or live capture.
-7. To monitor real traffic visible to this Windows computer, follow [`sensor/README.md`](sensor/README.md). Create a dedicated `ingestion_service` account for the sensor and configure it in the ignored `.env`; do not reuse the administrator login. After installing Npcap and the sensor dependencies, run `start_sensor_controller.ps1` in elevated PowerShell and leave it open, or optionally run `install_sensor_autostart.ps1` once as Administrator to register a hidden controller that starts at each sign-in. Use **Sensors** in the app to choose an adapter and start/stop capture. While it runs, **Events** shows received records and **Hosts** shows telemetry labels with recent-event timing. It does not see every other device on a Wi-Fi/LAN unless traffic is mirrored to the sensor.
+2. Replace every placeholder secret in `.env`: `SECRET_KEY`, the three `POSTGRES_*PASSWORD` values, `SENTINEL_BOOTSTRAP_ADMIN_PASSWORD`, and `SENTINEL_SENSOR_PASSWORD`. Set `MFA_ENCRYPTION_KEY` and `CLOUD_CONNECTOR_ENCRYPTION_KEY` to two different URL-safe base64 keys of 32 random bytes. [DEPLOYMENT.md](DEPLOYMENT.md#3-configuration) shows how to generate them.
+3. Start the stack:
 
-Compose binds published services to loopback. Do not expose the development stack to an untrusted network. The initial administrator is created only if the database has no users. If the bootstrap credentials were omitted on first start, configure them and use `docker compose exec backend python -m app.core.bootstrap`.
+   ```text
+   docker compose up --build -d
+   ```
 
-The API and worker use the `sentinel_runtime` PostgreSQL role, which is not a superuser and cannot bypass row-level security. A one-shot migration service uses the separate, non-superuser `sentinel_migrator` schema-owner role; the long-running API and worker do not receive its credentials. Existing records are assigned to the `default` organization by migration `005`. To provision another organization, run `docker compose exec -it backend python -m app.core.tenants acme "Acme Ltd" admin@example.com`; the command prompts for the first administrator password and seeds that organization’s detection rules. Sign in using the new slug. This tenant boundary is application-mediated PostgreSQL RLS and still needs independent security review before commercial deployment.
+4. Open <http://127.0.0.1:8080> and sign in with organization `default` and the bootstrap administrator email and password from `.env`. The API is at <http://127.0.0.1:8001>; in development mode its OpenAPI page is at `/docs`.
+5. For a first walkthrough, import `data/samples/auth_and_network_synthetic.json` under **Ingestion**. It is labelled synthetic data that produces example findings.
+6. Back up your configuration once the stack works: run `scripts\backup_env.ps1` and store the passphrase in a password manager.
 
-Useful commands:
+Published ports bind to loopback only. Do not expose this stack to a network without the steps in [DEPLOYMENT.md](DEPLOYMENT.md).
+
+The bootstrap administrator is created only when the database has no users. If the credentials were missing on first start, set them and run `docker compose exec backend python -m app.core.bootstrap`.
+
+### Useful commands
 
 ```text
 docker compose ps
@@ -26,29 +46,86 @@ docker compose logs -f backend worker
 docker compose down
 ```
 
-`docker compose down -v` deletes the lab database and uploaded data.
+`docker compose down -v` deletes the database and all uploaded data.
 
-## Local backend development
+## Live telemetry from this Windows host
 
-Use Python 3.12 (supported range is >=3.12,<3.14). Create a virtual environment in `backend`, install `requirements.txt`, and set `DATABASE_URL`, `SECRET_KEY`, and `SENTINEL_JOB_RUNNER=inline` in the environment. Start a local PostgreSQL 16 database, apply migrations with `alembic upgrade head`, then run `uvicorn app.main:app --reload` from `backend`. Set the bootstrap email/password before the first API start.
+Follow [sensor/README.md](sensor/README.md). In short: install Npcap, create a dedicated account with only the `ingestion_service` role, put its credentials in `.env`, and run `start_sensor_controller.ps1` in an elevated PowerShell. Then start and stop capture from **Sensors** in the console. The sensor reads packet headers and selected Windows event fields only; it does not capture payloads, passwords, or command lines, and it does not send traffic.
 
-The UI can also run with Node 22: `npm install` and `npm run dev` from `frontend`. The Vite server proxies `/api` to `127.0.0.1:8000`.
+## Cloud sources and notifications
 
-## What is included
+- Cloud connectors are added under **Cloud connectors** with read-only provider credentials; see [docs/CLOUD_CONNECTORS.md](docs/CLOUD_CONNECTORS.md). Only AWS CloudTrail has been exercised against a real account.
+- Notification channels are added under **Notifications**; see [docs/OPERATIONS.md](docs/OPERATIONS.md#alert-notifications) for what a message contains and how delivery behaves.
 
-- FastAPI API with access/refresh token auth, role checks, audit records, upload job tracking, and health/readiness endpoints.
-- PostgreSQL persistence and Alembic schema migrations.
-- Redis/Celery background ingestion worker, with bounded upload size and row count.
-- Generic JSON/CSV, Zeek, Suricata EVE, AWS CloudTrail, Azure Activity Log, and Microsoft Entra sign-in file normalizers; provider raw data is curated and malformed rows are quarantined. Cloud sources are file imports only; live provider API connectors are not implemented. See [cloud import guidance](docs/CLOUD_INGESTION.md).
-- A shared, versioned SentinelAI event envelope validates imported and live sensor rows before persistence. Its field limits and current ECS/OSSEM mapping boundary are documented in [the event schema](docs/EVENT_SCHEMA.md); this is not full ECS/OSSEM conformance.
-- Versioned built-in rules, evidence-linked detections, conservative case correlation, and optional offline Isolation Forest scoring.
-- React analyst console for overview, detections, cases, events, telemetry-derived Hosts, sensor health and local start/stop controls, ingestion jobs, rules, and audit/report access. Administrators can review registered sensors and rotate or revoke their credentials.
-- Optional Windows live host sensor that passively records initial TCP connection attempts and UDP headers, and can collect new Windows logon success/failure records, process starts, and selected service/task/audit-policy events when separately enabled. See [sensor setup](sensor/README.md).
+## Additional organizations
 
-## Scope and limitations
+```text
+docker compose exec -it backend python -m app.core.tenants acme "Acme Ltd" admin@example.com
+```
 
-This remains a defensive lab prototype, not an approved commercial production deployment. Organization-scoped storage/runtime RLS and TOTP MFA are implemented. Daily tenant-scoped retention covers security events (90-day default) and uploaded source files (30-day default); administrators can set each policy from Settings (1–3650 days). Detection snapshots, cases, and audit history remain after event deletion. Operator backup/restore scripts and an optional protected HTTP metrics endpoint are available; they still require a successful recovery drill, encrypted off-host storage, configured alert delivery, and tested on-call procedures. A single-provider OIDC SSO flow is implemented for self-hosted installations, but it still needs verification with the operator's actual provider. Automated cloud log shipping, broader endpoint coverage, representative real-data detection validation, and independent security review remain incomplete. There is no automatic endpoint isolation, firewall change, or shell remediation. See [operations](docs/OPERATIONS.md), the [demo runbook](docs/DEMO_RUNBOOK.md), [threat model](docs/THREAT_MODEL.md), [API contract](docs/API.md), [architecture](docs/ARCHITECTURE.md), and [project status](docs/STATUS.md).
+The command prompts for the first administrator's password and seeds that organization's rules. Users sign in with the new slug.
 
-## XDR capability readiness
+## Backups
 
-See [`docs/XDR_CAPABILITY_READINESS.md`](docs/XDR_CAPABILITY_READINESS.md) for the phased scope and acceptance criteria for sensor fleet identity, endpoint sources, cloud connectors, cross-source correlation, response simulation, and operational readiness.
+```text
+scripts\backup.ps1            # database dump + application data, with SHA-256 manifest
+scripts\backup_env.ps1        # passphrase-encrypted copy of .env
+scripts\offsite_backup.ps1    # fresh backup uploaded to a private S3 bucket
+scripts\restore.ps1           # restore from a manifest (asks for confirmation)
+```
+
+Backups contain telemetry and must be protected. Details, scheduling, and the recovery procedure are in [docs/OPERATIONS.md](docs/OPERATIONS.md) and [DEPLOYMENT.md](DEPLOYMENT.md#8-backup-and-disaster-recovery).
+
+## Development
+
+- **Backend:** Python 3.12. Create a virtual environment, install `backend/requirements.txt`, set `DATABASE_URL`, `SECRET_KEY`, and `SENTINEL_JOB_RUNNER=inline`, apply migrations with `alembic upgrade head`, and run `uvicorn app.main:app --reload` from `backend`.
+- **Frontend:** Node 22. `npm ci` and `npm run dev` from `frontend`; the dev server proxies `/api` to `127.0.0.1:8000`.
+- **Checks** (the same ones CI runs, from `backend`):
+
+  ```text
+  python -m pytest
+  python -m ruff check app tests
+  python -m mypy app
+  ```
+
+- **Dependencies:** container images and CI install from the hash-pinned `backend/requirements.lock`. After changing `backend/requirements.txt`, regenerate it as described in [DEPLOYMENT.md](DEPLOYMENT.md#6-dependencies-and-the-lock-file).
+- **Load test and ML evaluation:** `scripts/loadtest/run_load_test.ps1` starts a separate Compose project so synthetic data never reaches your normal database; `scripts/ml/evaluate_ml.py` evaluates the anomaly model offline.
+
+## Repository layout
+
+| Path | Contents |
+|---|---|
+| `backend/` | FastAPI application, Celery tasks, Alembic migrations, tests |
+| `frontend/` | React/TypeScript console served by NGINX |
+| `sensor/` | Windows host sensor and its local controller |
+| `scripts/` | Backup, restore, off-site upload, load test, and evaluation tooling |
+| `infra/aws/` | Least-privilege IAM and bucket policy templates for off-site backups |
+| `monitoring/` | Optional Prometheus configuration and starter alert rules |
+| `data/samples/` | Labelled synthetic sample datasets |
+| `docs/` | Architecture, operations, API, threat model, and status |
+
+## Documentation
+
+| Document | Use it for |
+|---|---|
+| [DEPLOYMENT.md](DEPLOYMENT.md) | Installing, configuring, hardening, upgrading, and recovering a deployment |
+| [docs/OPERATIONS.md](docs/OPERATIONS.md) | Day-to-day procedures: SSO, backups, retention, notifications, metrics |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Components and data flow |
+| [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md) | Assets, trust boundaries, and known risks |
+| [docs/API.md](docs/API.md) | HTTP API contract |
+| [docs/EVENT_SCHEMA.md](docs/EVENT_SCHEMA.md) | Normalized event fields |
+| [docs/CLOUD_CONNECTORS.md](docs/CLOUD_CONNECTORS.md) | Provider permissions and polling limits |
+| [docs/PERFORMANCE_AND_ML_EVALUATION.md](docs/PERFORMANCE_AND_ML_EVALUATION.md) | Measured load-test results and the anomaly-model evaluation |
+| [docs/XDR_CAPABILITY_READINESS.md](docs/XDR_CAPABILITY_READINESS.md) | Scope and acceptance criteria per capability |
+| [docs/DEMO_RUNBOOK.md](docs/DEMO_RUNBOOK.md) | A guided demonstration |
+| [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | Common problems |
+| [docs/STATUS.md](docs/STATUS.md) | Dated record of what was built and what was actually verified |
+
+## Known limitations
+
+- No independent security review; tenant isolation is enforced by the application and PostgreSQL row-level security and has not been externally tested.
+- TLS termination is not included; see [DEPLOYMENT.md](DEPLOYMENT.md#5-network-exposure-and-tls).
+- Azure, Entra, and OIDC SSO have not been validated against real tenants. Two sensors enrolling and being revoked independently has not been tested.
+- Performance was measured once on a laptop with synthetic data. The API runs a single process, and text search and the host inventory slow down as stored events grow.
+- Notifications cover new detections only. Sensor gaps, connector failures, and failed backups do not alert anyone.
+- Recovery time has been measured for the data restore steps only, not for rebuilding a host.

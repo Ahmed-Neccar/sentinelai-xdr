@@ -22,6 +22,12 @@ Run a backup manually:
 
 To schedule a daily 03:00 local-time backup for the current Windows user, run `./scripts/install_backup_task.ps1`. Docker Desktop must be running in that user's interactive session. Check Task Scheduler history and the latest manifest after each scheduled run. Remove the task with `./scripts/remove_backup_task.ps1`.
 
+### Encrypted `.env` backup
+
+The database backup does not contain `.env`. Without its keys a restored database cannot decrypt TOTP secrets, cloud connector credentials, or notification destinations. Run `./scripts/backup_env.ps1` in your own terminal after creating or changing `.env`. It asks for a passphrase of at least 12 characters twice, verifies that the result decrypts, and writes `backups/env-<timestamp>.enc` (AES-256-GCM, key derived with scrypt). The passphrase is not stored anywhere and cannot be recovered; keep it in a password manager, away from the backup files.
+
+`./scripts/backup.ps1` warns when no encrypted copy exists or when `.env` is newer than the latest one. The encrypted file is not part of the manifest and is not uploaded by the off-site job, so it protects against losing `.env` but not against losing this disk until you copy it to other media yourself. Restore with `./scripts/restore_env.ps1`; it writes `.env.restored` and never overwrites an existing file.
+
 ### Encrypted off-site copy (AWS S3)
 
 The optional `scripts/offsite_backup.ps1` creates and verifies a fresh local backup, verifies each artifact against the manifest SHA-256, uploads the database dump and app-data archive to a timestamped S3 prefix, then uploads the manifest as the completion marker. Upload requests explicitly use TLS and S3-managed SSE-S3 (`AES256`); the uploader checks remote object size, encryption, and the manifest SHA-256 metadata. The local files remain available if S3 is unreachable. S3 SSE-S3 is AWS-managed encryption at rest and does not require a separate customer key; AWS account recovery/MFA remains essential. Do not mistake this for client-side encryption: AWS services with authorized access can decrypt stored objects.
