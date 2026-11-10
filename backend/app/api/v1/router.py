@@ -10,6 +10,7 @@ from app.api.v1 import (
     hosts,
     ingest,
     meta,
+    notifications,
     users,
 )
 
@@ -24,3 +25,4 @@ api_router.include_router(hosts.router)
 api_router.include_router(detections.router)
 api_router.include_router(cases.router)
 api_router.include_router(meta.router)
+api_router.include_router(notifications.router)

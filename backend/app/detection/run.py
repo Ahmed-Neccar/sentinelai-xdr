@@ -19,6 +19,7 @@ from app.models import (
     DetectionRule,
     SecurityEvent,
 )
+from app.notifications.service import enqueue_detection_notifications
 
 
 def event_to_dict(event: SecurityEvent) -> dict:
@@ -171,6 +172,7 @@ def correlate_new(db: Session, detection: Detection) -> None:
         )
         .where(Case.status.in_(("new", "investigating")))
     ).all()
+    enqueue_detection_notifications(db, detection)
     for case in open_cases:
         if not case.detections:
             continue

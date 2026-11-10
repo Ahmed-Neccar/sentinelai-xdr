@@ -230,6 +230,23 @@ def poll_due_cloud_connectors_task() -> dict[str, int]:
     return {"connectors_queued": queued, "organizations_checked": len(organization_ids)}
 
 
+@celery_app.task(name="app.workers.tasks.deliver_notifications_task")
+def deliver_notifications_task() -> dict[str, int]:
+    """Send due alert notifications for every organization within its own scope."""
+    from app.notifications.service import deliver_pending, purge_delivery_history
+
+    with SessionLocal() as catalog_db:
+        organization_ids = list(catalog_db.scalars(select(Organization.id)))
+    totals = {"sent": 0, "retry": 0, "failed": 0, "dropped": 0, "purged": 0}
+    for organization_id in organization_ids:
+        with SessionLocal() as db:
+            set_organization_context(db, organization_id)
+            for key, value in deliver_pending(db).items():
+                totals[key] += value
+            totals["purged"] += purge_delivery_history(db)
+    return totals
+
+
 @celery_app.task(name="app.workers.tasks.cleanup_expired_events_task")
 def cleanup_expired_events_task(batch_size: int = 1000) -> dict[str, int]:
     """Purge expired telemetry in bounded, tenant-scoped transactions.
