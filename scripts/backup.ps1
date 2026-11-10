@@ -40,3 +40,17 @@ foreach ($Entry in @(
 }
 
 Write-Output "Backup verified from manifest: $($Manifest.FullName)"
+
+# The database backup cannot decrypt MFA secrets or connector credentials without
+# the keys in .env. Remind the operator when no current encrypted copy exists.
+$EnvFile = Join-Path $ProjectRoot ".env"
+if (Test-Path -LiteralPath $EnvFile -PathType Leaf) {
+    $EnvBackup = Get-ChildItem -LiteralPath $ResolvedBackupDirectory -Filter "env-*.enc" |
+        Sort-Object Name |
+        Select-Object -Last 1
+    if (-not $EnvBackup) {
+        Write-Warning "No encrypted .env backup exists. Run scripts\backup_env.ps1; without .env this backup cannot be fully restored."
+    } elseif ((Get-Item -LiteralPath $EnvFile).LastWriteTimeUtc -gt $EnvBackup.LastWriteTimeUtc) {
+        Write-Warning ".env changed after its last encrypted backup ($($EnvBackup.Name)). Run scripts\backup_env.ps1 again."
+    }
+}
