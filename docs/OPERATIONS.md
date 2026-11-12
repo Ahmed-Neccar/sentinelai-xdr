@@ -65,6 +65,14 @@ The Windows sensor persists its stable ID, Ed25519 private key, and monotonic re
 
 When updating an existing installation, rebuild/restart the API so migration 009 runs, then update the sensor environment with `sensor/.venv/Scripts/python.exe -m pip install -r sensor/requirements.txt` and restart the elevated local controller. Existing registrations are upgraded by the next sensor start; older sensor binaries cannot send signed requests. The request counter rejects replayed requests. First-use pinning is not hardware attestation, and administrator-controlled host access remains trusted.
 
+## Adding a second sensor (lab)
+
+Each sensor needs its own `ingestion_service` account: an account is bound to the first sensor ID and signing key that enrolls with it, and revoking a sensor disables its account. The panel has no user-management screen, so create the account with `.\scripts\create_sensor_account.ps1` in your own terminal; it asks for the administrator password and a new sensor password and stores neither.
+
+`.\scripts\package_sensor.ps1` writes `dist\sentinel-sensor.zip` without `sensor\runtime`, so the other machine generates its own identity. Never copy `sensor\runtime` to another machine: it holds this installation's sensor ID and private signing key.
+
+For a VirtualBox guest, `.\scripts\sensor_lab_network.ps1 -Action Enable` (elevated) forwards the host-only address `192.168.56.1:8001` to the loopback-only API and allows only the host-only subnet through the firewall. The connection is plain HTTP and is acceptable only on a host-only network that never leaves the computer; run `-Action Disable` when finished. A sensor on a real network requires the TLS reverse proxy described in `DEPLOYMENT.md`.
+
 ## Metrics scrape
 
 Set a private `METRICS_TOKEN` (at least 32 characters in production) in `.env` and restart the API. Scrape `http://backend:8000/api/v1/metrics` from a monitoring service on the Compose network with `Authorization: Bearer <token>`. Without the token, the endpoint is disabled. The current endpoint exposes process-local HTTP request totals and duration histograms with route templates, method, and status only; it does not label metrics with tenant, user, IP, or event data.
