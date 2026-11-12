@@ -43,6 +43,10 @@ class Settings(BaseSettings):
         default="http://127.0.0.1:8080,http://127.0.0.1:5173",
         alias="CORS_ORIGINS",
     )
+    # Reverse proxies whose X-Forwarded-For header is believed: comma-separated
+    # addresses, CIDR ranges or resolvable host names. Empty means the header
+    # is ignored and the connecting address is used.
+    trusted_proxies: str = Field(default="", alias="TRUSTED_PROXIES")
     bootstrap_admin_email: str | None = Field(default=None, alias="SENTINEL_BOOTSTRAP_ADMIN_EMAIL")
     bootstrap_admin_password: str | None = Field(
         default=None, alias="SENTINEL_BOOTSTRAP_ADMIN_PASSWORD"

@@ -95,6 +95,9 @@ services:
       OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-}
       OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-}
       OIDC_REDIRECT_URI: ${OIDC_REDIRECT_URI:-}
+      # Only these bundled proxies may report a client address. Requests that
+      # reach the API port directly have their X-Forwarded-For header ignored.
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-frontend,tls-proxy}
       DATABASE_URL: postgresql+psycopg://sentinel_runtime:${POSTGRES_APP_PASSWORD:-sentinel_runtime_dev_only}@postgres:5432/sentinel
       REDIS_URL: redis://redis:6379/0
       SENTINEL_JOB_RUNNER: celery

@@ -3,11 +3,12 @@ from typing import Annotated
 from uuid import UUID
 
 import jwt
-from fastapi import Depends, Request
+from fastapi import Depends
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
+from app.core.client_address import client_ip  # noqa: F401 - re-exported for routers
 from app.core.errors import AppError
 from app.core.permissions import has_any
 from app.core.security import decode_token
@@ -72,10 +73,3 @@ def require_roles(*allowed: str) -> Callable[..., TokenUser]:
         return user
 
     return dependency
-
-
-def client_ip(request: Request) -> str | None:
-    forwarded = request.headers.get("x-forwarded-for")
-    if forwarded:
-        return forwarded.split(",")[0].strip()[:64]
-    return request.client.host if request.client else None
