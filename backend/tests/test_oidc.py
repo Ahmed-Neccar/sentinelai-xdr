@@ -180,3 +180,14 @@ def test_sso_account_selection_rejects_unprovisioned_and_rebound_accounts() -> N
     with pytest.raises(AppError) as mismatch:
         oidc.select_account(None, _Account("someone-else"))
     assert mismatch.value.code == "sso_identity_mismatch"
+
+
+def test_redirect_origin_is_derived_from_the_registered_callback(monkeypatch) -> None:
+    for name in ("oidc_issuer", "oidc_client_id", "oidc_client_secret"):
+        monkeypatch.setattr(settings, name, "x" * 40)
+    monkeypatch.setattr(
+        settings, "oidc_redirect_uri", "https://localhost:8443/api/v1/auth/oidc/callback"
+    )
+    assert oidc.redirect_origin() == "https://localhost:8443"
+    monkeypatch.setattr(settings, "oidc_redirect_uri", None)
+    assert oidc.redirect_origin() is None

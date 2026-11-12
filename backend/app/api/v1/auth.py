@@ -1,5 +1,6 @@
 import hashlib
 import json
+import logging
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Literal
 from uuid import UUID, uuid4
@@ -37,6 +38,7 @@ from app.models import Organization, RefreshToken, User, UserRole
 from app.schemas.common import TokenUser
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+logger = logging.getLogger(__name__)
 
 
 class LoginRequest(BaseModel):
@@ -333,7 +335,10 @@ def login(
 
 @router.get("/oidc/status")
 def oidc_status() -> dict:
-    return {"enabled": oidc.enabled()}
+    # The origin lets the sign-in page send people to the one address where
+    # SSO can work: the transaction cookie and the result message are bound to
+    # the origin of the registered redirect URI.
+    return {"enabled": oidc.enabled(), "origin": oidc.redirect_origin()}
 
 
 @router.get("/oidc/start")
@@ -385,7 +390,33 @@ def oidc_callback(
     enforce_auth_rate_limit(f"oidc-callback:{client_ip(request) or 'unknown'}", limit=50)
     try:
         return _complete_oidc_callback(request, state, db, code, error)
-    except AppError:
+    except AppError as exc:
+        # Record why SSO failed. The browser only gets a generic message, so
+        # without this an operator cannot tell a wrong account from a broken
+        # provider configuration. The code is one of this app's own constants.
+        logger.warning("SSO sign-in failed: %s", exc.code)
+        try:
+            db.rollback()
+            # Audit rows are tenant-scoped; the organization is only known if
+            # the signed transaction cookie is still readable.
+            claims = oidc.read_transaction(request.cookies.get(oidc.TRANSACTION_COOKIE, ""), state)
+            organization = db.scalar(
+                select(Organization).where(Organization.slug == claims["organization_slug"])
+            )
+            if organization is not None:
+                set_organization_context(db, organization.id)
+                write_audit(
+                    db,
+                    actor_id=None,
+                    action="auth.sso_failed",
+                    target_type="sso",
+                    target_id=exc.code[:64],
+                    ip_address=client_ip(request),
+                    details={"code": exc.code},
+                )
+                db.commit()
+        except Exception:  # noqa: BLE001 - auditing must not mask the sign-in error page
+            db.rollback()
         page = _oidc_result_page(
             {
                 "type": "sentinelai-sso-error",
@@ -408,8 +439,14 @@ def _complete_oidc_callback(
     error: str | None,
 ) -> HTMLResponse:
     transaction = request.cookies.get(oidc.TRANSACTION_COOKIE)
-    if not transaction or error or not code:
-        raise AppError(401, "sso_authentication_failed", "Identity provider sign-in failed")
+    if not transaction:
+        # The browser did not return the cookie set by /oidc/start.
+        raise AppError(401, "sso_transaction_missing", "SSO transaction is missing or expired")
+    if error or not code:
+        # `error` is the provider's short OAuth error code, for example
+        # access_denied; it is safe to record and is not shown to the browser.
+        logger.warning("SSO provider returned error=%s", (error or "no_code")[:64])
+        raise AppError(401, "sso_provider_error", "Identity provider sign-in failed")
     claims = oidc.read_transaction(transaction, state)
     identity = oidc.exchange_and_validate(code, claims["verifier"], claims["nonce"])
     organization = db.scalar(

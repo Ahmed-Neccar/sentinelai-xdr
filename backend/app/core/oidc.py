@@ -3,6 +3,7 @@
 import base64
 import hashlib
 import hmac
+import logging
 import secrets
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -15,6 +16,7 @@ from jwt import PyJWKClient
 from app.core.config import settings
 from app.core.errors import AppError
 
+logger = logging.getLogger(__name__)
 TRANSACTION_COOKIE = "oidc_transaction"
 TRANSACTION_TTL_SECONDS = 300
 
@@ -28,6 +30,13 @@ def enabled() -> bool:
             settings.oidc_redirect_uri,
         )
     )
+
+
+def redirect_origin() -> str | None:
+    if not enabled():
+        return None
+    parsed = urlsplit(settings.oidc_redirect_uri or "")
+    return f"{parsed.scheme}://{parsed.netloc}" if parsed.scheme and parsed.netloc else None
 
 
 def _issuer_url(path: str) -> str:
@@ -190,6 +199,19 @@ def exchange_and_validate(code: str, verifier: str, nonce: str) -> dict:
     except AppError:
         raise
     except (httpx.HTTPError, ValueError, TypeError, jwt.PyJWTError) as exc:
+        # Operators need the cause; none of this contains the code, the
+        # client secret or a token.
+        provider_error = ""
+        if isinstance(exc, httpx.HTTPStatusError):
+            try:
+                body = exc.response.json()
+                provider_error = f" status={exc.response.status_code} error={body.get('error')}"
+                provider_error += f" codes={body.get('error_codes')}"
+            except (ValueError, AttributeError):
+                provider_error = f" status={exc.response.status_code}"
+        logger.warning(
+            "OIDC token exchange or validation failed: %s%s", type(exc).__name__, provider_error
+        )
         raise AppError(
             401, "sso_authentication_failed", "Identity provider sign-in failed"
         ) from exc
