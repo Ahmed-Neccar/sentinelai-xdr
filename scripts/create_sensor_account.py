@@ -63,7 +63,12 @@ def administrator_token(
 
 
 def create_sensor_account(
-    client: httpx.Client, token: str, email: str, password: str, full_name: str
+    client: httpx.Client,
+    token: str,
+    email: str,
+    password: str,
+    full_name: str,
+    role: str = "ingestion_service",
 ) -> dict:
     if len(password) < MIN_PASSWORD:
         raise AccountError(f"The sensor password must be at least {MIN_PASSWORD} characters.")
@@ -74,7 +79,7 @@ def create_sensor_account(
             "email": email,
             "password": password,
             "full_name": full_name,
-            "roles": ["ingestion_service"],
+            "roles": [role],
         },
     )
     if response.status_code == 409:
@@ -82,7 +87,7 @@ def create_sensor_account(
     if response.is_error:
         raise AccountError(f"The account was not created ({_detail(response)}).")
     created = response.json()
-    if created.get("roles") != ["ingestion_service"]:
+    if created.get("roles") != [role]:
         raise AccountError("The server returned unexpected roles; check the audit log.")
     return created
 
@@ -93,7 +98,13 @@ def main() -> int:
     parser.add_argument("--organization", default="default")
     parser.add_argument("--admin-email", default="admin@localhost.local")
     parser.add_argument("--sensor-email", default="sensor-vm@localhost.local")
-    parser.add_argument("--full-name", default="Second sensor (virtual machine)")
+    parser.add_argument("--full-name", default="")
+    parser.add_argument(
+        "--role",
+        default="ingestion_service",
+        choices=("ingestion_service", "analyst", "auditor"),
+        help="analyst or auditor provisions a person, for example for SSO sign-in",
+    )
     args = parser.parse_args()
 
     try:
@@ -115,11 +126,10 @@ def main() -> int:
                 lambda: input("Authenticator code: ").strip(),
             )
             created = create_sensor_account(
-                client, token, args.sensor_email.lower(), sensor_password, args.full_name
+                client, token, args.sensor_email.lower(), sensor_password, args.full_name, args.role
             )
             client.post("/api/v1/auth/logout", headers={"Authorization": f"Bearer {token}"})
-        print(f"Created {created['email']} with role ingestion_service (id {created['id']}).")
-        print("Type this email and password when the sensor on the other machine asks for them.")
+        print(f"Created {created['email']} with role {args.role} (id {created['id']}).")
     except AccountError as error:
         print(f"Error: {error}", file=sys.stderr)
         return 1

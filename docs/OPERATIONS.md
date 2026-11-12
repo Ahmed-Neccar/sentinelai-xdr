@@ -10,6 +10,14 @@ For a self-hosted installation with one identity provider, set `OIDC_ISSUER`, `O
 
 The environment configuration applies to the whole self-hosted instance and currently supports one provider. The provider must return an RS256 ID token with `email` and `email_verified: true`. Test login, account disablement and the organization's MFA policy against the actual provider before enabling SSO for users. Protect `.env` and rotate the client secret through the identity provider.
 
+### Microsoft Entra ID
+
+Entra never emits `email_verified`. For a tenant-specific Entra issuer (`https://login.microsoftonline.com/<tenant-id>/v2.0`) the app accepts Entra's optional claim `xms_edov: true` instead. In the app registration, open Token configuration and add the optional ID-token claims `email` and `xms_edov`; without `xms_edov` every sign-in is rejected as unverified. Multi-tenant issuers (`common`, `organizations`) are not supported. Accounts are still matched by email and are not bound to the provider's subject identifier, so do not enable SSO where a tenant administrator who can edit user email attributes is not trusted.
+
+### Lab HTTPS front
+
+The callback must be HTTPS. For a lab on one computer, `scripts/make_lab_tls_cert.py` writes a self-signed certificate to `.data/tls-lab/` and `docker compose --profile tls-lab up -d tls-proxy` serves the panel at `https://localhost:8443`. The browser warns about the certificate; this is expected and is not acceptable for real users. Use `OIDC_REDIRECT_URI=https://localhost:8443/api/v1/auth/oidc/callback` and open the panel at that address when signing in with SSO. The sensor controller only accepts the `http://127.0.0.1:8080` origin, so use that address for the Sensors page.
+
 ## Backups
 
 `scripts/backup.ps1` creates a PostgreSQL custom-format dump and an archive of the shared application-data volume (uploads and model artifacts). The Compose backup job validates both archives and writes a manifest with SHA-256 hashes. The PowerShell wrapper rechecks the manifest and both hashes on the host. Backup artifacts are written to the ignored `backups/` directory and contain customer telemetry and source files; restrict access and encrypt them before sending them off the host. Protect `MFA_ENCRYPTION_KEY` separately because a database backup alone cannot decrypt enrolled TOTP secrets.

@@ -102,6 +102,29 @@ def read_transaction(transaction: str, state: str) -> dict:
         ) from exc
 
 
+MICROSOFT_ENTRA_HOST = "login.microsoftonline.com"
+
+
+def email_is_verified(claims: dict) -> bool:
+    """Whether the identity provider vouches for the email claim.
+
+    The standard signal is `email_verified: true`. Microsoft Entra ID never
+    emits that claim; its equivalent is the optional claim `xms_edov` ("email
+    domain owner verified"), which is honoured only for a tenant-specific
+    Entra issuer. An Entra email claim without `xms_edov: true` can be set by
+    any tenant administrator and must not be matched to a local account.
+    """
+    if claims.get("email_verified") is True:
+        return True
+    issuer = urlsplit(settings.oidc_issuer or "")
+    return (
+        issuer.scheme == "https"
+        and issuer.hostname == MICROSOFT_ENTRA_HOST
+        and claims.get("iss") == settings.oidc_issuer
+        and claims.get("xms_edov") is True
+    )
+
+
 def exchange_and_validate(code: str, verifier: str, nonce: str) -> dict:
     metadata = discover()
     try:
@@ -156,7 +179,7 @@ def exchange_and_validate(code: str, verifier: str, nonce: str) -> dict:
         or not 1 <= len(subject) <= 255
         or not isinstance(email, str)
         or len(email) > 320
-        or claims.get("email_verified") is not True
+        or not email_is_verified(claims)
     ):
         raise AppError(401, "sso_identity_unverified", "A verified email identity is required")
     return {"subject": subject, "email": email.lower(), "name": claims.get("name", "")}

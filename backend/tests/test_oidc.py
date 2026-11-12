@@ -132,3 +132,24 @@ def test_oidc_authorization_request_requests_code_flow_pkce_and_nonce(monkeypatc
     assert query["code_challenge_method"] == ["S256"]
     assert query["code_challenge"] == ["pkce-challenge"]
     assert query["nonce"] == ["nonce-value"]
+
+
+def test_entra_email_is_trusted_only_with_domain_owner_verification(monkeypatch) -> None:
+    entra = "https://login.microsoftonline.com/11111111-2222-3333-4444-555555555555/v2.0"
+    monkeypatch.setattr(settings, "oidc_issuer", entra)
+    assert oidc.email_is_verified({"iss": entra, "xms_edov": True})
+    assert not oidc.email_is_verified({"iss": entra})
+    assert not oidc.email_is_verified({"iss": entra, "xms_edov": False})
+    assert not oidc.email_is_verified({"iss": entra, "xms_edov": "true"})
+    assert not oidc.email_is_verified({"iss": entra.replace("1111", "9999"), "xms_edov": True})
+
+
+def test_other_providers_still_require_the_standard_email_verified_claim(monkeypatch) -> None:
+    issuer = "https://id.example.com/tenant/v2.0"
+    monkeypatch.setattr(settings, "oidc_issuer", issuer)
+    assert oidc.email_is_verified({"iss": issuer, "email_verified": True})
+    assert not oidc.email_is_verified({"iss": issuer, "xms_edov": True})
+    assert not oidc.email_is_verified({"iss": issuer, "email_verified": "true"})
+    lookalike = "https://login.microsoftonline.com.example.com/tenant/v2.0"
+    monkeypatch.setattr(settings, "oidc_issuer", lookalike)
+    assert not oidc.email_is_verified({"iss": lookalike, "xms_edov": True})
