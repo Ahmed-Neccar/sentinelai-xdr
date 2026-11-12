@@ -96,7 +96,7 @@ Production mode also disables the interactive API documentation page. It does no
 
 1. Terminate TLS in a proxy you maintain (for example NGINX, Caddy, or Traefik) with a certificate for your host name, and forward to `http://127.0.0.1:8080`. The frontend container already proxies `/api` to the backend, so one upstream is enough.
 2. Set `CORS_ORIGINS` to the public HTTPS origin. If SSO is used, set `OIDC_REDIRECT_URI` to `https://<host>/api/v1/auth/oidc/callback` and register exactly that URI with the provider.
-3. Have the proxy **replace** the `X-Forwarded-For` header with the real client address. The API uses the first value of that header as the client address for audit records without checking who sent it, so a proxy that appends to a client-supplied header, or direct access to port 8001, lets a caller choose the address that is logged.
+3. Add your proxy to `TRUSTED_PROXIES` (addresses, CIDR ranges or host names; the default is the bundled `frontend,tls-proxy`). The API believes `X-Forwarded-For` only when the connecting peer is a trusted proxy, and then uses the right-most address that is not itself trusted; a header sent by any other client, including direct access to port 8001, is ignored. If your proxy is not listed, audit records and per-address rate limits see the proxy's address instead of the client's. With Docker Desktop, connections through a published port arrive from the Docker gateway address, so the real client address is only available when your own proxy forwards it.
 4. Keep ports 8001 and 5432 on loopback. Nothing outside the host needs them. Restrict the proxy with a firewall or VPN where you can.
 
 The frontend sends a restrictive Content Security Policy and standard security headers. That policy also allows the loopback Windows sensor controller (`127.0.0.1`), which is only meaningful on the sensor host.
@@ -138,7 +138,7 @@ Base images (`python:3.12-slim`, `postgres:16-alpine`, `redis:7-alpine`, `node:2
 
 1. Take a backup: `scripts\backup.ps1`. Confirm the manifest was written.
 2. Update the code.
-3. `docker compose up --build -d`. Migrations apply before the new API starts.
+3. `docker compose up --build -d`. Migrations apply before the new API starts. Always build every service this way: the migration, API, worker and scheduler are separate images built from the same source, and rebuilding only `backend` once started a new API against an unmigrated database, which crash-looped until the migration image was rebuilt.
 4. Verify: `docker compose ps`, the readiness URL, `docker compose logs --tail 50 worker` shows the worker `ready`, sign in, and open an event and a case.
 5. If the sensor changed, update its environment (`sensor\.venv\Scripts\python.exe -m pip install -r sensor\requirements.lock`) and restart the controller.
 

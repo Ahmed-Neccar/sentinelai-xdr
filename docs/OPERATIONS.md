@@ -12,7 +12,11 @@ The environment configuration applies to the whole self-hosted instance and curr
 
 ### Microsoft Entra ID
 
-Entra never emits `email_verified`. For a tenant-specific Entra issuer (`https://login.microsoftonline.com/<tenant-id>/v2.0`) the app accepts Entra's optional claim `xms_edov: true` instead. In the app registration, open Token configuration and add the optional ID-token claims `email` and `xms_edov`; without `xms_edov` every sign-in is rejected as unverified. Multi-tenant issuers (`common`, `organizations`) are not supported. Accounts are still matched by email and are not bound to the provider's subject identifier, so do not enable SSO where a tenant administrator who can edit user email attributes is not trusted.
+Entra never emits `email_verified`. For a tenant-specific Entra issuer (`https://login.microsoftonline.com/<tenant-id>/v2.0`) the app accepts Entra's optional claim `xms_edov: true` instead. In the app registration, open Token configuration and add the optional ID-token claims `email` and `xms_edov`; without `xms_edov` every sign-in is rejected as unverified. Multi-tenant issuers (`common`, `organizations`) are not supported.
+
+### Account binding
+
+The first SSO sign-in binds the local account to the provider's issuer and immutable subject (`sub`). Later sign-ins are matched by that pair, whatever the email claim says, and an email match is accepted only for an account that has never been bound. If a person's provider account is rebuilt and gets a new subject, sign-in fails with `sso_identity_mismatch` (audited); an administrator can then use "Unlink SSO" on the Users page so the next sign-in binds again. The very first sign-in still trusts the verified email, so provision SSO accounts only for addresses whose owner you know.
 
 ### Lab HTTPS front
 
@@ -75,7 +79,7 @@ When updating an existing installation, rebuild/restart the API so migration 009
 
 ## Adding a second sensor (lab)
 
-Each sensor needs its own `ingestion_service` account: an account is bound to the first sensor ID and signing key that enrolls with it, and revoking a sensor disables its account. The panel has no user-management screen, so create the account with `.\scripts\create_sensor_account.ps1` in your own terminal; it asks for the administrator password and a new sensor password and stores neither.
+Each sensor needs its own `ingestion_service` account: an account is bound to the first sensor ID and signing key that enrolls with it, and revoking a sensor disables its account. Create the account on the panel's Users page with the role "Sensor account", or with `.\scripts\create_sensor_account.ps1` in your own terminal; the script asks for the administrator password and a new sensor password and stores neither.
 
 `.\scripts\package_sensor.ps1` writes `dist\sentinel-sensor.zip` without `sensor\runtime`, so the other machine generates its own identity. Never copy `sensor\runtime` to another machine: it holds this installation's sensor ID and private signing key.
 
