@@ -2,7 +2,7 @@
 
 SentinelAI XDR is a defensive, self-hosted security monitoring platform for a lab or small environment. It collects authorized endpoint, network, and cloud audit telemetry, normalizes it, runs transparent detection rules, groups related findings into cases, and gives analysts a console to investigate them.
 
-**Status: lab prototype.** It runs and has been exercised on one machine, but it has not had an independent security review and is not approved for commercial production. Findings are review signals for an analyst, not proof of compromise. The product never isolates a host, blocks an address, or disables an account; response actions are recorded simulations only.
+**Status: lab prototype.** It runs and has been exercised on one machine, but it has not had an independent security review and is not approved for commercial production. Findings are review signals for an analyst, not proof of compromise. The product never isolates a host or disables an account; those response actions are recorded simulations only. The one action it can execute is a time-limited block of one IP address in the Windows Firewall of a sensor computer, and only after a proposal, approval by a different administrator, and an explicit opt-in on that sensor (see `docs/OPERATIONS.md`).
 
 ## What it does
 

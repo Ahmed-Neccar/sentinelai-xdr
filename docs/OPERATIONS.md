@@ -85,6 +85,27 @@ Each sensor needs its own `ingestion_service` account: an account is bound to th
 
 For a VirtualBox guest, `.\scripts\sensor_lab_network.ps1 -Action Enable` (elevated) forwards the host-only address `192.168.56.1:8001` to the loopback-only API and allows only the host-only subnet through the firewall. The connection is plain HTTP and is acceptable only on a host-only network that never leaves the computer; run `-Action Disable` when finished. A sensor on a real network requires the TLS reverse proxy described in `DEPLOYMENT.md`.
 
+## Enforced IP blocks
+
+`block_source_ip` is the only response action that changes a system. It blocks one IP address, inbound and outbound, in the Windows Firewall of one sensor computer for a limited time.
+
+How it runs:
+
+1. The sensor must be started with blocking allowed: the "Allow this computer to apply approved IP blocks" box on the Sensors page, or `--enforce-blocks` on the command line. It then announces the capability `response.block_ip`. A sensor refuses this option when its server address is plain HTTP to another computer.
+2. In a case, an analyst or administrator proposes "Real IP block", choosing the address, the sensor and a duration (5 minutes to 24 hours, default 60).
+3. A different administrator approves within 24 hours. The requester cannot approve their own proposal, so a deployment needs at least two administrators to use this.
+4. The sensor receives the block in the response to its next signed heartbeat (about ten seconds), applies it, and reports back. The server never connects to a host.
+5. The block ends by itself. Any administrator, including the requester, can lift it earlier with "Lift block now". Every step is audited (`response.block.*`).
+
+Safeguards on the sensor, applied whatever the server sends: it only adds or deletes block rules named `SentinelAI block <id>`; it refuses reserved addresses, its own addresses, its default gateways, its DNS servers and the SentinelAI server; if it cannot read that protected list it refuses; end times are kept in `sensor\runtime\response-blocks.json` and expired blocks are lifted without the server.
+
+Limits to know before relying on it:
+
+- A block is lifted by the sensor process. If the sensor is not running when a block expires, the firewall rule stays until the sensor next starts. To clear everything by hand, run `.\scripts\remove_sentinel_blocks.ps1` in an elevated PowerShell.
+- It protects only the sensor computer, not the network; other machines can still reach the blocked address.
+- A block cuts existing and new connections to that address for every program on the computer. Blocking a shared service address (a CDN, a public DNS resolver you rely on but have not configured, a VPN endpoint) can break unrelated things; the protected list only knows what the computer has configured.
+- Private addresses can be blocked on purpose. Check the address is not a device you need, such as a printer or a second router.
+
 ## Metrics scrape
 
 Set a private `METRICS_TOKEN` (at least 32 characters in production) in `.env` and restart the API. Scrape `http://backend:8000/api/v1/metrics` from a monitoring service on the Compose network with `Authorization: Bearer <token>`. Without the token, the endpoint is disabled. The current endpoint exposes process-local HTTP request totals and duration histograms with route templates, method, and status only; it does not label metrics with tenant, user, IP, or event data.
@@ -109,4 +130,4 @@ Use **Send test** after creating a channel and confirm the message arrives. This
 
 TOTP MFA and single-provider OIDC SSO are implemented. OIDC still requires validation against the operator's real identity provider, including account disablement and MFA policy. Read-only polling foundations exist for AWS CloudTrail, Azure Activity Log, and Microsoft Entra sign-ins. AWS CloudTrail polling and event visibility have been exercised in the local lab; Azure and Entra live polling still require separate test tenants and end-to-end validation. Provider access is read-only, but operators must verify the exact permissions, licensing, retention, and credential rotation for their accounts.
 
-The Windows sensor collects selected passive network metadata and opt-in Windows Security events. It is not full EDR, and an ordinary Wi-Fi adapter does not expose all traffic on a LAN. The XDR response workflow records human-approved simulations; it does not isolate hosts, block addresses, or disable accounts. ML scores and rule findings are investigation signals, not proof of compromise. A lab deployment and successful connector check do not establish commercial production readiness. Before production use, complete an isolated backup/restore rehearsal, off-host encrypted backup and recovery-key procedures, alert delivery/on-call coverage, workload and tenant-isolation validation, representative detection evaluation, and an independent security review.
+The Windows sensor collects selected passive network metadata and opt-in Windows Security events. It is not full EDR, and an ordinary Wi-Fi adapter does not expose all traffic on a LAN. The XDR response workflow records human-approved simulations; it does not isolate hosts or disable accounts. Its one executed action, a sensor-enforced IP block, is described under "Enforced IP blocks" and has only been exercised in the local lab. ML scores and rule findings are investigation signals, not proof of compromise. A lab deployment and successful connector check do not establish commercial production readiness. Before production use, complete an isolated backup/restore rehearsal, off-host encrypted backup and recovery-key procedures, alert delivery/on-call coverage, workload and tenant-isolation validation, representative detection evaluation, and an independent security review.

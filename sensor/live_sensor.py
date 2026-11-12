@@ -27,6 +27,7 @@ try:
 except ImportError as exc:
     raise SystemExit("Scapy is missing. Install sensor/requirements.txt and Npcap; see sensor/README.md.") from exc
 
+from response_actions import BlockEnforcer, server_allows_enforcement
 from windows_security import WindowsSecurityLog
 
 SENSOR_VERSION = "0.4.0"
@@ -352,6 +353,14 @@ def main() -> int:
         help="Also collect new Windows process-creation events (4688); requires Process Creation auditing",
     )
     parser.add_argument(
+        "--enforce-blocks",
+        action="store_true",
+        help=(
+            "Allow this computer to apply approved, time-limited IP blocks in Windows Firewall. "
+            "Off by default; only over HTTPS or with a server on this same computer"
+        ),
+    )
+    parser.add_argument(
         "--use-project-env",
         action="store_true",
         help="Read the dedicated sensor login from local .env instead of prompting for a password",
@@ -390,6 +399,22 @@ def main() -> int:
             print(f"Cannot enable Windows Security log collection: {exc}", file=sys.stderr)
             return 4
 
+    if args.enforce_blocks and not server_allows_enforcement(args.server):
+        print(
+            "IP blocking is refused over plain HTTP to another computer: anyone able to alter "
+            "that traffic could make this computer block addresses. Use an https:// server "
+            "address, or run without --enforce-blocks.",
+            file=sys.stderr,
+        )
+        return 2
+    # Always created: blocks left by an earlier run must still be lifted when
+    # they expire, even if blocking is not allowed this time.
+    enforcer = BlockEnforcer(
+        Path(__file__).resolve().parent / "runtime" / "response-blocks.json", args.server
+    )
+    for action_id, state, detail in enforcer.expire():
+        print(f"Lifted an expired IP block from an earlier run ({action_id}): {state} {detail}")
+
     if args.use_project_env:
         try:
             email, password = project_env_credentials()
@@ -410,6 +435,8 @@ def main() -> int:
             capabilities.append("windows.process_events")
         if args.endpoint_events:
             capabilities.append("windows.security_change_events")
+        if args.enforce_blocks:
+            capabilities.append("response.block_ip")
         job = api.post(
             "/api/v1/ingest/live/start",
             {
@@ -489,8 +516,9 @@ def main() -> int:
         while True:
             now = time.monotonic()
             if now - last_heartbeat >= 10.0:
+                server_actions = None
                 try:
-                    api.post(
+                    heartbeat = api.post(
                         f"/api/v1/ingest/live/{job_id}/heartbeat",
                         {
                             "interface": args.interface[:255],
@@ -502,12 +530,29 @@ def main() -> int:
                             "windows_collection_state": windows_collection_state,
                         },
                     )
+                    if args.enforce_blocks and isinstance(heartbeat, dict):
+                        server_actions = heartbeat.get("response_actions")
                 except SensorAuthorizationError as exc:
                     authorization_lost = True
                     print(f"Sensor access was revoked; stopping capture: {exc}", file=sys.stderr)
                     raise
                 except (httpx.HTTPError, RuntimeError) as exc:
                     print(f"Sensor heartbeat failed; it will retry: {exc}", file=sys.stderr)
+                # Expiry runs every time, with or without the server. New
+                # blocks are only taken when blocking was allowed at start.
+                for action_id, state, detail in enforcer.handle(server_actions):
+                    print(f"IP block {action_id}: {state} {detail}".rstrip())
+                    try:
+                        api.post(
+                            f"/api/v1/ingest/live/{job_id}/actions/{action_id}/result",
+                            {"result": state, "detail": detail[:200]},
+                        )
+                    except SensorAuthorizationError:
+                        raise
+                    except (httpx.HTTPError, RuntimeError) as exc:
+                        # The server offers the action again on the next
+                        # heartbeat, and the enforcer answers idempotently.
+                        print(f"Could not report IP block result; will retry: {exc}", file=sys.stderr)
                 last_heartbeat = now
             if windows_log and now - last_windows_poll >= 5.0:
                 try:

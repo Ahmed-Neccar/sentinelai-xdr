@@ -140,6 +140,10 @@ class SensorSupervisor:
                 args.append("--process-events")
             if endpoint_events:
                 args.append("--endpoint-events")
+            # Opt-in per start: lets this computer apply approved IP blocks.
+            enforce_blocks = payload.get("enforce_blocks") is True
+            if enforce_blocks:
+                args.append("--enforce-blocks")
             with log_path.open("w", encoding="utf-8") as log:
                 self.process = subprocess.Popen(
                     args,
@@ -154,6 +158,7 @@ class SensorSupervisor:
                 "windows_events": windows_events,
                 "process_events": process_events,
                 "endpoint_events": endpoint_events,
+                "enforce_blocks": enforce_blocks,
             }
             self.last_error = None
             return self.status()
