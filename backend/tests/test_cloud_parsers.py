@@ -135,3 +135,37 @@ def test_entra_high_risk_signin_rule_matches_only_successful_signin() -> None:
     assert len(evaluate_rule(spec, [event])) == 1
     failed = {**event, "event_type": "auth.failure"}
     assert evaluate_rule(spec, [failed]) == []
+
+
+def test_azure_activity_reads_caller_address_and_resource_from_management_api_shape() -> None:
+    result = normalize_azure_activity(
+        {
+            "eventTimestamp": "2026-11-12T08:41:25Z",
+            "operationName": {"value": "Microsoft.Authorization/roleAssignments/write"},
+            "status": {"value": "Succeeded"},
+            "caller": "admin@example.com",
+            "httpRequest": {"clientIpAddress": "203.0.113.7", "method": "PUT"},
+            "claims": {"ipaddr": "198.51.100.9", "name": "must not be stored"},
+            "resourceId": "/subscriptions/s/providers/Microsoft.Authorization/roleAssignments/r",
+            "resourceType": {"value": "Microsoft.Authorization/roleAssignments"},
+            "resourceProviderName": {"value": "Microsoft.Authorization"},
+            "resourceGroupName": "",
+            "eventDataId": "abc",
+        },
+        1,
+    )
+    assert str(result["src_ip"]) == "203.0.113.7"
+    attributes = result["attributes"]
+    assert attributes["resource_id"].endswith("/roleAssignments/r")
+    assert attributes["cloud_resource"] == "Microsoft.Authorization/roleAssignments"
+    assert attributes["service"] == "Microsoft.Authorization"
+    assert result["raw_payload"]["callerIpAddress"] == "203.0.113.7"
+    assert "claims" not in result["raw_payload"]
+    assert "resourceGroupName" not in result["raw_payload"]
+
+
+def test_azure_activity_falls_back_to_claims_address_and_tolerates_none() -> None:
+    base = {"eventTimestamp": "2026-11-12T08:41:25Z", "operationName": "x/read"}
+    from_claims = normalize_azure_activity({**base, "claims": {"ipaddr": "198.51.100.9"}}, 1)
+    assert str(from_claims["src_ip"]) == "198.51.100.9"
+    assert normalize_azure_activity({**base, "httpRequest": "junk"}, 1)["src_ip"] is None

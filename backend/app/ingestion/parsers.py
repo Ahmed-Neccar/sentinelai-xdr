@@ -242,6 +242,30 @@ def normalize_azure_activity(raw: dict[str, Any], row_number: int) -> dict[str, 
             "subStatus": sub_status,
         }
     )
+    # The management API reports the caller address under httpRequest or in the
+    # token claims; the top-level callerIpAddress only exists in exported logs.
+    http_request = _dict_or_empty(raw.get("httpRequest"))
+    claims = _dict_or_empty(raw.get("claims"))
+    caller_ip = first(
+        raw.get("callerIpAddress"), http_request.get("clientIpAddress"), claims.get("ipaddr")
+    )
+    if caller_ip is not None:
+        curated["callerIpAddress"] = caller_ip
+    resource_type = raw.get("resourceType")
+    if isinstance(resource_type, dict):
+        resource_type = first(resource_type.get("value"), resource_type.get("localizedValue"))
+    resource_provider = raw.get("resourceProviderName")
+    if isinstance(resource_provider, dict):
+        resource_provider = first(
+            resource_provider.get("value"), resource_provider.get("localizedValue")
+        )
+    for key, value in (
+        ("resourceType", resource_type),
+        ("resourceProviderName", resource_provider),
+        ("resourceGroupName", raw.get("resourceGroupName")),
+    ):
+        if value:
+            curated[key] = value
     actor = raw.get("caller")
     status_text = str(status or "").strip().lower()
     outcome = (
@@ -255,12 +279,15 @@ def normalize_azure_activity(raw: dict[str, Any], row_number: int) -> dict[str, 
         {
             "event_time": first(raw.get("eventTimestamp"), raw.get("submissionTimestamp")),
             "event_type": "cloud.azure.activity",
-            "src_ip": parse_ip(raw.get("callerIpAddress")),
+            "src_ip": parse_ip(caller_ip),
             "host_id": None,
             "username": actor,
             "source_name": "azure.activity",
             "action": operation,
             "actor": actor,
+            "resource_id": raw.get("resourceId"),
+            "cloud_resource": resource_type,
+            "service": resource_provider,
             "subscription_id": raw.get("subscriptionId"),
             "tenant_id": raw.get("tenantId"),
             "category": category,
