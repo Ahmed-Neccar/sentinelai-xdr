@@ -106,6 +106,25 @@ Limits to know before relying on it:
 - A block cuts existing and new connections to that address for every program on the computer. Blocking a shared service address (a CDN, a public DNS resolver you rely on but have not configured, a VPN endpoint) can break unrelated things; the protected list only knows what the computer has configured.
 - Private addresses can be blocked on purpose. Check the address is not a device you need, such as a printer or a second router.
 
+## Enforced host isolation and local account disable
+
+These follow the same rules as an enforced IP block (proposal, approval by a different administrator within 24 hours, delivery in the sensor's signed heartbeat response, automatic end, early lift by any administrator, audit as `response.isolation.*` and `response.account.*`). Each has its own opt-in box on the Sensors page (`--allow-isolation`, `--allow-account-disable`).
+
+**Host isolation** (`isolate_host`, 5 minutes to 4 hours, default 30) blocks every IPv4 address and all global and unique-local IPv6 in the sensor computer's Windows Firewall, except: the SentinelAI server, the default gateway (needed for DHCP), limited broadcast, loopback, and host-internal virtual networks whose adapter name starts with `vEthernet` (Hyper-V, WSL, Docker Desktop). Right after adding the rules the sensor checks that the server still answers and removes the rules again if it does not. Only one isolation can exist. It is lifted when the sensor stops, and a newly started sensor lifts any isolation left behind.
+
+- Everyone using that computer loses the network and the internet for the whole duration, including remote-support and cloud tools.
+- The gateway itself stays reachable, so the router's own pages are not cut off.
+- A sensor that is killed rather than stopped leaves the isolation in place until it starts again. `.\scripts\remove_sentinel_blocks.ps1` (elevated) removes it without a network connection; keep that in mind before isolating a machine nobody can physically reach.
+- The server must have an IPv4 address; otherwise the sensor refuses.
+
+**Local account disable** (`disable_local_account`, 5 minutes to 24 hours, default 60) runs `net user <name> /active:no` on the sensor computer and enables the account again at the end. The sensor refuses built-in accounts (Administrator, Guest and similar), the account it runs as, an account that is already disabled (so it never re-enables something an administrator turned off), the last enabled member of the local Administrators group, and any name it cannot read back from Windows. If it cannot list the accounts it refuses.
+
+- It applies to local accounts on that one computer only, not to domain, Microsoft or Entra accounts.
+- Disabling an account does not sign out a session that is already open.
+- Names with non-ASCII letters are refused.
+
+Both the sensor and the removal script judge firewall commands by their exit code, not their text, because `netsh` messages are translated on a non-English Windows.
+
 ## Metrics scrape
 
 Set a private `METRICS_TOKEN` (at least 32 characters in production) in `.env` and restart the API. Scrape `http://backend:8000/api/v1/metrics` from a monitoring service on the Compose network with `Authorization: Bearer <token>`. Without the token, the endpoint is disabled. The current endpoint exposes process-local HTTP request totals and duration histograms with route templates, method, and status only; it does not label metrics with tenant, user, IP, or event data.

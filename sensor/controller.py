@@ -144,6 +144,12 @@ class SensorSupervisor:
             enforce_blocks = payload.get("enforce_blocks") is True
             if enforce_blocks:
                 args.append("--enforce-blocks")
+            allow_isolation = payload.get("allow_isolation") is True
+            if allow_isolation:
+                args.append("--allow-isolation")
+            allow_account_disable = payload.get("allow_account_disable") is True
+            if allow_account_disable:
+                args.append("--allow-account-disable")
             with log_path.open("w", encoding="utf-8") as log:
                 self.process = subprocess.Popen(
                     args,
@@ -159,6 +165,8 @@ class SensorSupervisor:
                 "process_events": process_events,
                 "endpoint_events": endpoint_events,
                 "enforce_blocks": enforce_blocks,
+                "allow_isolation": allow_isolation,
+                "allow_account_disable": allow_account_disable,
             }
             self.last_error = None
             return self.status()

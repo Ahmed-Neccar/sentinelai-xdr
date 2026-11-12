@@ -56,3 +56,37 @@ def test_sensor_reports_only_move_the_state_forward() -> None:
     assert ip_block.next_status(ip_block.PENDING, "removed") is None
     assert ip_block.next_status(ip_block.APPLIED, "applied") is None
     assert ip_block.next_status(ip_block.APPLIED, "bogus") is None
+
+
+def test_each_executed_action_has_its_own_capability_verbs_and_limits() -> None:
+    assert set(ip_block.EXECUTED) == {"block_source_ip", "isolate_host", "disable_local_account"}
+    capabilities = {spec.capability for spec in ip_block.EXECUTED.values()}
+    verbs = {verb for spec in ip_block.EXECUTED.values() for verb in (spec.apply, spec.lift)}
+    assert len(capabilities) == 3 and len(verbs) == 6
+    # Isolation cuts a whole computer off, so its ceiling is the lowest.
+    assert ip_block.EXECUTED[ip_block.ISOLATE].max_minutes == 240
+    assert ip_block.validate_minutes(None, ip_block.ISOLATE) == 30
+    with pytest.raises(ip_block.BlockPolicyError):
+        ip_block.validate_minutes(241, ip_block.ISOLATE)
+    assert ip_block.validate_minutes(1440, ip_block.DISABLE_ACCOUNT) == 1440
+
+
+def test_isolation_target_is_always_the_chosen_sensor() -> None:
+    assert ip_block.normalize_target(ip_block.ISOLATE, "some-other-server", "LAB-PC") == "LAB-PC"
+    assert ip_block.normalize_target(ip_block.ACTION, "203.0.113.9", "LAB-PC") == "203.0.113.9"
+    with pytest.raises(ip_block.BlockPolicyError):
+        ip_block.normalize_target("simulate_host_isolation", "x", "LAB-PC")
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["/active:yes", "-x", "a&b", "a|b", 'a"b', "a\\b", "a/b", "x" * 21, "", " ", "user.", "a;b"],
+)
+def test_account_names_that_could_be_read_as_options_or_commands_are_rejected(name: str) -> None:
+    with pytest.raises(ip_block.BlockPolicyError):
+        ip_block.normalize_account_name(name)
+
+
+def test_ordinary_account_names_are_accepted() -> None:
+    for name in ("sentinel-test", "Ahmed", "lab user", "svc_backup.01"):
+        assert ip_block.normalize_account_name(f" {name} ") == name

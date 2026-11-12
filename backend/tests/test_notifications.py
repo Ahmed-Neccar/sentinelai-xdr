@@ -226,7 +226,12 @@ def test_response_message_names_the_action_and_keeps_details_in_the_summary() ->
     assert message["severity"] == "high" and message["case_id"] == "case-1"
     # The address and host only appear in the summary, which channels can leave out.
     assert "203.0.113.9" not in message["title"] and "LAB-PC" not in message["title"]
-    assert message["summary"] == "Address 203.0.113.9 on sensor LAB-PC for 5 minutes"
+    assert message["title"] == "Approval needed: a real IP block was proposed"
+    assert message["summary"] == "Target 203.0.113.9 on sensor LAB-PC for 5 minutes"
+    isolation = response_message(
+        "applied", case_id="c", target="LAB-PC", sensor="LAB-PC", minutes=30, label="Host isolation"
+    )
+    assert isolation["title"] == "Host isolation applied by the sensor"
     assert "different administrator" in message["note"]
     refused = response_message(
         "refused", case_id="c", target="192.168.1.1", sensor="LAB-PC", minutes=None,

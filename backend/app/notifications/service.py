@@ -55,20 +55,28 @@ def enqueue_detection_notifications(db: Session, detection: Detection) -> int:
 
 RESPONSE_EVENTS: dict[str, tuple[str, str]] = {
     # event -> (severity shown in the message, title)
-    "approval_needed": ("high", "Approval needed: a real IP block was proposed"),
-    "rejected": ("informational", "IP block proposal rejected"),
-    "applied": ("medium", "IP block applied by the sensor"),
-    "refused": ("high", "IP block refused by the sensor"),
-    "failed": ("high", "IP block failed on the sensor"),
-    "removed": ("informational", "IP block lifted"),
+    "approval_needed": ("high", "Approval needed: {label} was proposed"),
+    "rejected": ("informational", "{label} proposal rejected"),
+    "applied": ("medium", "{label} applied by the sensor"),
+    "refused": ("high", "{label} refused by the sensor"),
+    "failed": ("high", "{label} failed on the sensor"),
+    "removed": ("informational", "{label} lifted"),
 }
 
 
 def response_message(
-    event: str, *, case_id: str, target: str, sensor: str, minutes: int | None, detail: str = ""
+    event: str,
+    *,
+    case_id: str,
+    target: str,
+    sensor: str,
+    minutes: int | None,
+    detail: str = "",
+    label: str = "IP block",
 ) -> dict[str, Any]:
     severity, title = RESPONSE_EVENTS[event]
-    summary = f"Address {target} on sensor {sensor}"
+    title = title.format(label=label if event != "approval_needed" else f"a real {label}")
+    summary = f"Target {target} on sensor {sensor}"
     if minutes:
         summary += f" for {minutes} minutes"
     if detail:

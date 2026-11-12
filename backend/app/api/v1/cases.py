@@ -73,7 +73,7 @@ class ResponseSimulationIn(BaseModel):
 
 # block_source_ip is the only action that is really executed, and only by an
 # enrolled sensor that opted in. Everything else is an audit record.
-EXECUTED_ACTIONS = {ip_block.ACTION}
+EXECUTED_ACTIONS = set(ip_block.EXECUTED)
 SIMULATED_ACTIONS = {
     "simulate_host_isolation",
     "simulate_account_disable",
@@ -265,8 +265,9 @@ def get_case(case_id: UUID, db: DbDep, _: Reader) -> dict:
     body["response_recommendation"] = {
         "available": True,
         "reason": (
-            "Simulations are audit records only. The one executed action is a time-limited "
-            "IP block on a sensor host that was started with blocking allowed."
+            "Simulations are audit records only. Executed actions (IP block, host isolation, "
+            "local account disable) are time-limited and applied by a sensor host that was "
+            "started with that action allowed."
         ),
         "simulate_only": False,
         "actions": sorted(SIMULATED_ACTIONS),
@@ -277,12 +278,21 @@ def get_case(case_id: UUID, db: DbDep, _: Reader) -> dict:
             "min": ip_block.MIN_MINUTES,
             "max": ip_block.MAX_MINUTES,
         },
+        "executed_limits": {
+            name: {
+                "default": spec.default_minutes,
+                "min": spec.min_minutes,
+                "max": spec.max_minutes,
+                "capability": spec.capability,
+            }
+            for name, spec in ip_block.EXECUTED.items()
+        },
         "guidance": [
             "Verify linked evidence and confirm the target is in authorized scope.",
             "An analyst may propose an action; a different administrator must approve it.",
             "A simulation writes an audit record only and does not contact the target.",
-            "An approved IP block is applied by the chosen sensor within about ten seconds, "
-            "ends by itself, and can be lifted early by any administrator.",
+            "An approved executed action is applied by the chosen sensor within about ten "
+            "seconds, ends by itself, and can be lifted early by any administrator.",
         ],
     }
     return body
@@ -303,7 +313,9 @@ def propose_response_simulation(
         raise AppError(400, "invalid_action", "Unsupported simulation action")
     executed = payload.action_type in EXECUTED_ACTIONS
     if not executed and (payload.sensor_id is not None or payload.duration_minutes is not None):
-        raise AppError(400, "invalid_action", "Only an IP block takes a sensor and a duration")
+        raise AppError(
+            400, "invalid_action", "Only an executed action takes a sensor and a duration"
+        )
     target = payload.target.strip()
     if not target:
         raise AppError(400, "invalid_target", "Target cannot be blank")
@@ -321,19 +333,29 @@ def propose_response_simulation(
             ) from exc
     duration_minutes: int | None = None
     if executed:
-        try:
-            target = ip_block.normalize_block_target(target)
-            duration_minutes = ip_block.validate_minutes(payload.duration_minutes)
-        except ip_block.BlockPolicyError as exc:
-            raise AppError(400, "invalid_target", str(exc)) from exc
-        if payload.sensor_id is None or payload.sensor_id not in {
-            item["sensor_id"] for item in _enforcing_sensors(db)
-        }:
+        spec = ip_block.EXECUTED[payload.action_type]
+        sensor = next(
+            (
+                item
+                for item in _enforcing_sensors(db)
+                if item["sensor_id"] == payload.sensor_id
+                and spec.capability in item["capabilities"]
+            ),
+            None,
+        )
+        if sensor is None:
             raise AppError(
                 400,
                 "sensor_cannot_enforce",
-                "Choose an active sensor that was started with IP blocking allowed",
+                "Choose an active sensor that was started with this action allowed",
             )
+        try:
+            target = ip_block.normalize_target(payload.action_type, target, sensor["name"])
+            duration_minutes = ip_block.validate_minutes(
+                payload.duration_minutes, payload.action_type
+            )
+        except ip_block.BlockPolicyError as exc:
+            raise AppError(400, "invalid_target", str(exc)) from exc
     if payload.idempotency_key:
         existing = db.scalar(
             select(ResponseSimulation).where(
@@ -522,7 +544,11 @@ def approve_response_simulation(
     write_audit(
         db,
         actor_id=actor.id,
-        action="response.block.approved" if executed else "response.simulation.approved",
+        action=(
+            f"response.{ip_block.EXECUTED[simulation.action_type].audit}.approved"
+            if executed
+            else "response.simulation.approved"
+        ),
         target_type="response_simulation",
         target_id=str(simulation.id),
         ip_address=client_ip(request),
@@ -564,7 +590,7 @@ def simulate_response(
     if simulation is None:
         raise AppError(404, "not_found", "Response simulation not found")
     if simulation.action_type in EXECUTED_ACTIONS:
-        raise AppError(409, "invalid_transition", "An IP block is enforced by its sensor")
+        raise AppError(409, "invalid_transition", "This action is enforced by its sensor")
     if simulation.status != "approved":
         raise AppError(409, "invalid_transition", "Only approved simulations can be recorded")
     simulation.status = "simulated"
@@ -608,18 +634,18 @@ def lift_ip_block(
         .with_for_update()
     )
     if simulation is None or simulation.action_type not in EXECUTED_ACTIONS:
-        raise AppError(404, "not_found", "IP block not found")
+        raise AppError(404, "not_found", "Executed response action not found")
     if simulation.enforcement_status == ip_block.PENDING:
         simulation.enforcement_status = ip_block.CANCELLED
         simulation.removed_at = datetime.now(UTC)
     elif simulation.enforcement_status == ip_block.APPLIED:
         simulation.enforcement_status = ip_block.REMOVAL_PENDING
     else:
-        raise AppError(409, "invalid_transition", "This block is not active")
+        raise AppError(409, "invalid_transition", "This action is not active")
     write_audit(
         db,
         actor_id=actor.id,
-        action="response.block.lift_requested",
+        action=f"response.{ip_block.EXECUTED[simulation.action_type].audit}.lift_requested",
         target_type="response_simulation",
         target_id=str(simulation.id),
         ip_address=client_ip(request),
@@ -730,7 +756,7 @@ def _response_simulation(item: ResponseSimulation) -> dict:
         "rejection_note": item.rejection_note,
         "simulated_at": item.simulated_at,
         "execution": (
-            "firewall block on the chosen sensor host"
+            "applied by the chosen sensor on its own computer"
             if item.action_type in EXECUTED_ACTIONS
             else "none; audit record only"
         ),
@@ -751,15 +777,20 @@ def _enforcing_sensors(db: Session) -> list[dict]:
         .join(DataSource, DataSource.id == SensorRegistration.data_source_id)
         .where(SensorRegistration.status == "active")
     ).all()
-    return [
-        {
-            "sensor_id": registration.sensor_id,
-            "name": (source.config or {}).get("host_name") or source.name,
-            "last_seen_at": registration.last_seen_at,
-        }
-        for registration, source in rows
-        if ip_block.CAPABILITY in ((source.config or {}).get("capabilities") or [])
-    ]
+    known = {spec.capability for spec in ip_block.EXECUTED.values()}
+    sensors = []
+    for registration, source in rows:
+        capabilities = sorted(known & set((source.config or {}).get("capabilities") or []))
+        if capabilities:
+            sensors.append(
+                {
+                    "sensor_id": registration.sensor_id,
+                    "name": (source.config or {}).get("host_name") or source.name,
+                    "last_seen_at": registration.last_seen_at,
+                    "capabilities": capabilities,
+                }
+            )
+    return sensors
 
 
 def _same_response_request(

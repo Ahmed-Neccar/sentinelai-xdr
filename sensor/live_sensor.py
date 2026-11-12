@@ -361,6 +361,22 @@ def main() -> int:
         ),
     )
     parser.add_argument(
+        "--allow-isolation",
+        action="store_true",
+        help=(
+            "Allow this computer to be cut off from the network (except the SentinelAI server) "
+            "for a limited time when an isolation is approved. Off by default"
+        ),
+    )
+    parser.add_argument(
+        "--allow-account-disable",
+        action="store_true",
+        help=(
+            "Allow approved, time-limited disabling of a local Windows account on this computer. "
+            "Off by default"
+        ),
+    )
+    parser.add_argument(
         "--use-project-env",
         action="store_true",
         help="Read the dedicated sensor login from local .env instead of prompting for a password",
@@ -399,21 +415,46 @@ def main() -> int:
             print(f"Cannot enable Windows Security log collection: {exc}", file=sys.stderr)
             return 4
 
-    if args.enforce_blocks and not server_allows_enforcement(args.server):
+    allowed_actions = {
+        kind
+        for kind, enabled in (
+            ("block", args.enforce_blocks),
+            ("isolate", args.allow_isolation),
+            ("account", args.allow_account_disable),
+        )
+        if enabled
+    }
+    if allowed_actions and not server_allows_enforcement(args.server):
         print(
-            "IP blocking is refused over plain HTTP to another computer: anyone able to alter "
-            "that traffic could make this computer block addresses. Use an https:// server "
-            "address, or run without --enforce-blocks.",
+            "Response actions are refused over plain HTTP to another computer: anyone able to "
+            "alter that traffic could make this computer block addresses, isolate itself or "
+            "disable accounts. Use an https:// server address, or run without the "
+            "--enforce-blocks, --allow-isolation and --allow-account-disable options.",
             file=sys.stderr,
         )
         return 2
-    # Always created: blocks left by an earlier run must still be lifted when
-    # they expire, even if blocking is not allowed this time.
+
+    def server_reachable() -> bool:
+        # Asked right after isolation rules are added; if this fails the
+        # isolation is removed again, because nobody could lift it remotely.
+        try:
+            return httpx.get(f"{args.server.rstrip('/')}/api/v1/health", timeout=5.0).is_success
+        except httpx.HTTPError:
+            return False
+
+    # Always created: actions left by an earlier run must still be lifted when
+    # they expire, even if nothing is allowed this time.
     enforcer = BlockEnforcer(
-        Path(__file__).resolve().parent / "runtime" / "response-blocks.json", args.server
+        Path(__file__).resolve().parent / "runtime" / "response-blocks.json",
+        args.server,
+        allowed=allowed_actions,
+        server_reachable=server_reachable,
     )
+    # An isolation must not outlive the sensor that manages it.
+    for action_id, state, detail in enforcer.release_isolation("left by an earlier run"):
+        print(f"Lifted an isolation from an earlier run ({action_id}): {state} {detail}")
     for action_id, state, detail in enforcer.expire():
-        print(f"Lifted an expired IP block from an earlier run ({action_id}): {state} {detail}")
+        print(f"Lifted an expired action from an earlier run ({action_id}): {state} {detail}")
 
     if args.use_project_env:
         try:
@@ -437,6 +478,10 @@ def main() -> int:
             capabilities.append("windows.security_change_events")
         if args.enforce_blocks:
             capabilities.append("response.block_ip")
+        if args.allow_isolation:
+            capabilities.append("response.isolate_host")
+        if args.allow_account_disable:
+            capabilities.append("response.disable_account")
         job = api.post(
             "/api/v1/ingest/live/start",
             {
@@ -530,7 +575,7 @@ def main() -> int:
                             "windows_collection_state": windows_collection_state,
                         },
                     )
-                    if args.enforce_blocks and isinstance(heartbeat, dict):
+                    if allowed_actions and isinstance(heartbeat, dict):
                         server_actions = heartbeat.get("response_actions")
                 except SensorAuthorizationError as exc:
                     authorization_lost = True
@@ -541,7 +586,7 @@ def main() -> int:
                 # Expiry runs every time, with or without the server. New
                 # blocks are only taken when blocking was allowed at start.
                 for action_id, state, detail in enforcer.handle(server_actions):
-                    print(f"IP block {action_id}: {state} {detail}".rstrip())
+                    print(f"Response action {action_id}: {state} {detail}".rstrip())
                     try:
                         api.post(
                             f"/api/v1/ingest/live/{job_id}/actions/{action_id}/result",
@@ -609,6 +654,22 @@ def main() -> int:
                 sniffer.stop()
         except Exception:
             pass
+        # A stopped sensor can no longer lift an isolation when it expires, so
+        # it is lifted now. IP blocks and disabled accounts keep their end
+        # time and are lifted at the next start if it has passed by then.
+        try:
+            for action_id, state, detail in enforcer.release_isolation("sensor stopped"):
+                print(f"Isolation {action_id} lifted because the sensor is stopping: {state}")
+                if not authorization_lost:
+                    try:
+                        api.post(
+                            f"/api/v1/ingest/live/{job_id}/actions/{action_id}/result",
+                            {"result": state, "detail": detail[:200]},
+                        )
+                    except Exception:  # noqa: BLE001 - shutting down; the server re-offers it
+                        pass
+        except Exception as exc:  # noqa: BLE001 - never block shutdown
+            print(f"Could not lift isolation while stopping: {exc}", file=sys.stderr)
         if authorization_lost:
             while not pending.empty():
                 pending.get()

@@ -506,7 +506,7 @@ async def report_response_action(
         .where(
             ResponseSimulation.id == action_id,
             ResponseSimulation.sensor_id == registration.sensor_id,
-            ResponseSimulation.action_type == ip_block.ACTION,
+            ResponseSimulation.action_type.in_(list(ip_block.EXECUTED)),
         )
         .with_for_update()
     )
@@ -527,7 +527,7 @@ async def report_response_action(
     write_audit(
         db,
         actor_id=actor.id,
-        action=f"response.block.{status}",
+        action=f"response.{ip_block.EXECUTED[action.action_type].audit}.{status}",
         target_type="response_simulation",
         target_id=str(action.id),
         ip_address=client_ip(request),
@@ -994,7 +994,7 @@ def _pending_response_actions(
         select(ResponseSimulation)
         .where(
             ResponseSimulation.sensor_id == registration.sensor_id,
-            ResponseSimulation.action_type == ip_block.ACTION,
+            ResponseSimulation.action_type.in_(list(ip_block.EXECUTED)),
             ResponseSimulation.enforcement_status.in_(
                 [ip_block.PENDING, ip_block.APPLIED, ip_block.REMOVAL_PENDING]
             ),
@@ -1004,13 +1004,16 @@ def _pending_response_actions(
     ).all()
     actions: list[dict] = []
     for row in rows:
+        spec = ip_block.EXECUTED[row.action_type]
         if row.enforcement_status == ip_block.PENDING and row.status == "approved":
             actions.append(
                 {
                     "id": str(row.id),
-                    "action": "block",
+                    "action": spec.apply,
+                    # "ip" is kept for the IP block; "target" serves every action.
                     "ip": row.target,
-                    "minutes": row.duration_minutes or ip_block.DEFAULT_MINUTES,
+                    "target": row.target,
+                    "minutes": row.duration_minutes or spec.default_minutes,
                 }
             )
         elif row.enforcement_status == ip_block.REMOVAL_PENDING or (
@@ -1018,7 +1021,9 @@ def _pending_response_actions(
             and row.block_until is not None
             and row.block_until <= now
         ):
-            actions.append({"id": str(row.id), "action": "unblock", "ip": row.target})
+            actions.append(
+                {"id": str(row.id), "action": spec.lift, "ip": row.target, "target": row.target}
+            )
     return actions
 
 

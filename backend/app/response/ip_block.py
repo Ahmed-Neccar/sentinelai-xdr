@@ -1,21 +1,59 @@
-"""Policy for the one response action that is really executed: a time-limited
-firewall block of one IP address on one enrolled sensor host.
+"""Policy for the response actions that are really executed.
 
-The server never connects to a host. An approved block is handed to the
-sensor in its signed heartbeat response; the sensor applies it locally and
-reports back. This module holds the rules both sides of that exchange rely on.
+All three are applied by an enrolled sensor on its own Windows host, never by
+the server: a time-limited firewall block of one IP address, a time-limited
+network isolation of the sensor host, and a time-limited disabling of one
+local Windows account. An approved action is handed to the sensor in its
+signed heartbeat response; the sensor applies it locally and reports back.
+This module holds the rules both sides of that exchange rely on.
+
+(The module keeps its original name; the IP block was the first such action.)
 """
 
 from __future__ import annotations
 
 import ipaddress
+import re
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
+
+@dataclass(frozen=True)
+class ExecutedAction:
+    name: str
+    capability: str  # the sensor must have announced this at its last start
+    apply: str  # verb sent to the sensor
+    lift: str
+    audit: str  # audit actions are "response.<audit>.<event>"
+    label: str  # used in notifications
+    min_minutes: int
+    max_minutes: int
+    default_minutes: int
+
+
 ACTION = "block_source_ip"
-CAPABILITY = "response.block_ip"
-DEFAULT_MINUTES = 60
-MIN_MINUTES = 5
-MAX_MINUTES = 24 * 60
+ISOLATE = "isolate_host"
+DISABLE_ACCOUNT = "disable_local_account"
+
+EXECUTED: dict[str, ExecutedAction] = {
+    ACTION: ExecutedAction(
+        ACTION, "response.block_ip", "block", "unblock", "block", "IP block", 5, 24 * 60, 60
+    ),
+    # Isolation cuts a whole computer off, so it is kept short.
+    ISOLATE: ExecutedAction(
+        ISOLATE, "response.isolate_host", "isolate", "release", "isolation",
+        "Host isolation", 5, 4 * 60, 30,
+    ),
+    DISABLE_ACCOUNT: ExecutedAction(
+        DISABLE_ACCOUNT, "response.disable_account", "disable_account", "enable_account",
+        "account", "Local account disable", 5, 24 * 60, 60,
+    ),
+}
+
+CAPABILITY = EXECUTED[ACTION].capability
+DEFAULT_MINUTES = EXECUTED[ACTION].default_minutes
+MIN_MINUTES = EXECUTED[ACTION].min_minutes
+MAX_MINUTES = EXECUTED[ACTION].max_minutes
 
 # enforcement_status values
 PENDING = "pending"  # approved, waiting for the sensor to apply it
@@ -28,9 +66,13 @@ CANCELLED = "cancelled"  # lifted before the sensor ever applied it
 
 SENSOR_RESULTS = {"applied", "refused", "failed", "removed"}
 
+# A local Windows account name: no path, option or shell characters, and it
+# cannot start with a character that a command could read as a switch.
+_ACCOUNT_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._ -]{0,19}$")
+
 
 class BlockPolicyError(ValueError):
-    """The requested block is not allowed; the message is safe to show."""
+    """The requested action is not allowed; the message is safe to show."""
 
 
 def normalize_block_target(value: str) -> str:
@@ -58,11 +100,34 @@ def normalize_block_target(value: str) -> str:
     return str(address)
 
 
-def validate_minutes(value: int | None) -> int:
-    minutes = DEFAULT_MINUTES if value is None else value
-    if not MIN_MINUTES <= minutes <= MAX_MINUTES:
+def normalize_account_name(value: str) -> str:
+    name = value.strip()
+    if not _ACCOUNT_NAME.match(name) or name.endswith((" ", ".")):
         raise BlockPolicyError(
-            f"Block duration must be between {MIN_MINUTES} and {MAX_MINUTES} minutes"
+            "Enter one local Windows account name (letters, digits, dot, dash, underscore, space)"
+        )
+    return name
+
+
+def normalize_target(action: str, value: str, sensor_name: str) -> str:
+    """The stored target for an executed action."""
+    if action == ACTION:
+        return normalize_block_target(value)
+    if action == DISABLE_ACCOUNT:
+        return normalize_account_name(value)
+    if action == ISOLATE:
+        # Isolation always concerns the chosen sensor computer itself; what the
+        # requester typed is ignored so it cannot suggest another machine.
+        return sensor_name[:255] or "sensor host"
+    raise BlockPolicyError("Unsupported action")
+
+
+def validate_minutes(value: int | None, action: str = ACTION) -> int:
+    spec = EXECUTED[action]
+    minutes = spec.default_minutes if value is None else value
+    if not spec.min_minutes <= minutes <= spec.max_minutes:
+        raise BlockPolicyError(
+            f"Duration must be between {spec.min_minutes} and {spec.max_minutes} minutes"
         )
     return minutes
 

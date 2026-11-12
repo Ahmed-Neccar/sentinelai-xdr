@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.models import DataSource, ResponseSimulation, SensorRegistration
 from app.notifications.service import enqueue_response_notifications, response_message
+from app.response.ip_block import EXECUTED
 
 
 def sensor_name(db: Session, simulation: ResponseSimulation) -> str:
@@ -35,6 +36,7 @@ def notify_block_event(
             sensor=sensor_name(db, simulation),
             minutes=simulation.duration_minutes if with_duration else None,
             detail=detail[:200],
+            label=EXECUTED[simulation.action_type].label,
         )
         with db.begin_nested():
             return enqueue_response_notifications(db, message)

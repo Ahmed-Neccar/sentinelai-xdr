@@ -6,6 +6,8 @@ type Row = Record<string, any>
 
 const ACTION_LABEL: Record<string, string> = {
   block_source_ip: 'Real IP block',
+  isolate_host: 'Real host isolation',
+  disable_local_account: 'Real local account disable',
   simulate_host_isolation: 'Host isolation (simulation)',
   simulate_account_disable: 'Account disable (simulation)',
   simulate_source_ip_block: 'Source IP block (simulation)',
@@ -34,7 +36,9 @@ export default function PendingApprovals({
     const question = step === 'reject'
       ? 'Reject this proposal?'
       : item.executed
-        ? 'Approve this real block? The sensor computer will block the address within about ten seconds.'
+        ? (item.action_type === 'isolate_host'
+          ? 'Approve this isolation? The sensor computer will be cut off from the network within about ten seconds.'
+          : 'Approve this real action? The sensor computer will apply it within about ten seconds.')
         : 'Approve this simulation? Nothing is executed.'
     if (!window.confirm(t(question))) return
     setBusy(true)
