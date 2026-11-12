@@ -13,6 +13,7 @@ from fastapi import APIRouter, Depends, File, Form, Header, Request, UploadFile
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import func, or_, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.orm import Session
 
 from app.api.deps import DbDep, client_ip, require_roles
 from app.audit.service import write_audit
@@ -22,7 +23,15 @@ from app.core.permissions import ADMIN, ANALYST, INGESTION
 from app.core.security import hash_password
 from app.ingestion.parsers import RowError, normalize_generic, validate_normalized_event
 from app.ingestion.service import safe_filename
-from app.models import DataSource, IngestionJob, SecurityEvent, SensorRegistration, User
+from app.models import (
+    DataSource,
+    IngestionJob,
+    ResponseSimulation,
+    SecurityEvent,
+    SensorRegistration,
+    User,
+)
+from app.response import ip_block
 from app.schemas.common import Page, TokenUser
 from app.workers.dispatch import enqueue_ingestion
 
@@ -455,12 +464,80 @@ async def live_capture_heartbeat(
                 "reported_at": job.last_heartbeat_at.isoformat(),
             }
             source.config = config
+    response_actions = _pending_response_actions(db, registration, job.last_heartbeat_at)
     db.commit()
     return {
         "job_id": job.id,
         "last_heartbeat_at": job.last_heartbeat_at,
         "diagnostics_recorded": True,
+        # Work for this sensor only, delivered in the response to its own
+        # signed request; the server never opens a connection to a host.
+        "response_actions": response_actions,
     }
+
+
+class ResponseActionResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    result: str = Field(pattern="^(applied|refused|failed|removed)$")
+    detail: str = Field(default="", max_length=200)
+
+
+@router.post("/ingest/live/{job_id}/actions/{action_id}/result")
+async def report_response_action(
+    job_id: UUID,
+    action_id: UUID,
+    payload: ResponseActionResult,
+    db: DbDep,
+    actor: LiveSensorUser,
+    request: Request,
+) -> dict:
+    job = db.get(IngestionJob, job_id)
+    if job is None or not job.original_filename.startswith("live-capture:"):
+        raise AppError(404, "not_found", "Live capture session not found")
+    _assert_live_session_access(job, actor)
+    registration = _assert_registered_sensor_session(db, job, actor)
+    if registration is None:
+        raise AppError(403, "forbidden", "Only an enrolled sensor can report response actions")
+    await _verify_registered_sensor_request(request, registration)
+    action = db.scalar(
+        select(ResponseSimulation)
+        .where(
+            ResponseSimulation.id == action_id,
+            ResponseSimulation.sensor_id == registration.sensor_id,
+            ResponseSimulation.action_type == ip_block.ACTION,
+        )
+        .with_for_update()
+    )
+    if action is None:
+        raise AppError(404, "not_found", "Response action not found for this sensor")
+    status = ip_block.next_status(action.enforcement_status, payload.result)
+    if status is None:
+        # A repeated or late report: answer without changing anything.
+        return {"id": action.id, "enforcement_status": action.enforcement_status, "changed": False}
+    now = datetime.now(UTC)
+    action.enforcement_status = status
+    action.enforcement_detail = payload.detail[:255]
+    if status == ip_block.APPLIED:
+        action.enforced_at = now
+        action.block_until = ip_block.block_until(now, action.duration_minutes or 0)
+    elif status == ip_block.REMOVED:
+        action.removed_at = now
+    write_audit(
+        db,
+        actor_id=actor.id,
+        action=f"response.block.{status}",
+        target_type="response_simulation",
+        target_id=str(action.id),
+        ip_address=client_ip(request),
+        details={
+            "target": action.target,
+            "sensor_id": str(registration.sensor_id),
+            "detail": action.enforcement_detail,
+        },
+    )
+    db.commit()
+    return {"id": action.id, "enforcement_status": status, "changed": True}
 
 
 @router.get("/ingest/live/sessions")
@@ -904,6 +981,43 @@ def _assert_registered_sensor_session(
     if registration is None:
         raise AppError(404, "not_found", "Live capture session not found")
     return registration
+
+
+def _pending_response_actions(
+    db: Session, registration: SensorRegistration | None, now: datetime
+) -> list[dict]:
+    if registration is None:
+        return []
+    rows = db.scalars(
+        select(ResponseSimulation)
+        .where(
+            ResponseSimulation.sensor_id == registration.sensor_id,
+            ResponseSimulation.action_type == ip_block.ACTION,
+            ResponseSimulation.enforcement_status.in_(
+                [ip_block.PENDING, ip_block.APPLIED, ip_block.REMOVAL_PENDING]
+            ),
+        )
+        .order_by(ResponseSimulation.created_at)
+        .limit(50)
+    ).all()
+    actions: list[dict] = []
+    for row in rows:
+        if row.enforcement_status == ip_block.PENDING and row.status == "approved":
+            actions.append(
+                {
+                    "id": str(row.id),
+                    "action": "block",
+                    "ip": row.target,
+                    "minutes": row.duration_minutes or ip_block.DEFAULT_MINUTES,
+                }
+            )
+        elif row.enforcement_status == ip_block.REMOVAL_PENDING or (
+            row.enforcement_status == ip_block.APPLIED
+            and row.block_until is not None
+            and row.block_until <= now
+        ):
+            actions.append({"id": str(row.id), "action": "unblock", "ip": row.target})
+    return actions
 
 
 def _source(source: DataSource) -> dict:

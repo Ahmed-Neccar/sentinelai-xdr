@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import Session, selectinload
 
 from app.api.deps import DbDep, client_ip, require_roles
 from app.audit.service import write_audit
@@ -18,13 +18,16 @@ from app.models import (
     CaseComment,
     CaseDetection,
     CaseStatusHistory,
+    DataSource,
     Detection,
     DetectionEvidence,
     ResponseSimulation,
     Role,
+    SensorRegistration,
     User,
     UserRole,
 )
+from app.response import ip_block
 from app.schemas.common import Page, TokenUser
 
 router = APIRouter(prefix="/cases", tags=["cases"])
@@ -62,8 +65,14 @@ class ResponseSimulationIn(BaseModel):
     target: str = Field(min_length=1, max_length=512)
     rationale: str = Field(min_length=10, max_length=2000)
     idempotency_key: str | None = Field(default=None, min_length=8, max_length=128)
+    # Only for block_source_ip: the sensor host that enforces it, and for how long.
+    sensor_id: UUID | None = None
+    duration_minutes: int | None = None
 
 
+# block_source_ip is the only action that is really executed, and only by an
+# enrolled sensor that opted in. Everything else is an audit record.
+EXECUTED_ACTIONS = {ip_block.ACTION}
 SIMULATED_ACTIONS = {
     "simulate_host_isolation",
     "simulate_account_disable",
@@ -224,14 +233,24 @@ def get_case(case_id: UUID, db: DbDep, _: Reader) -> dict:
     body["response_recommendation"] = {
         "available": True,
         "reason": (
-            "Simulation records only. No host, account, network, or cloud action is executed."
+            "Simulations are audit records only. The one executed action is a time-limited "
+            "IP block on a sensor host that was started with blocking allowed."
         ),
-        "simulate_only": True,
+        "simulate_only": False,
         "actions": sorted(SIMULATED_ACTIONS),
+        "executed_actions": sorted(EXECUTED_ACTIONS),
+        "enforcing_sensors": _enforcing_sensors(db),
+        "block_minutes": {
+            "default": ip_block.DEFAULT_MINUTES,
+            "min": ip_block.MIN_MINUTES,
+            "max": ip_block.MAX_MINUTES,
+        },
         "guidance": [
             "Verify linked evidence and confirm the target is in authorized scope.",
-            "An analyst may propose a simulation; a different administrator must approve it.",
-            "The approved simulation writes an audit record only and does not contact the target.",
+            "An analyst may propose an action; a different administrator must approve it.",
+            "A simulation writes an audit record only and does not contact the target.",
+            "An approved IP block is applied by the chosen sensor within about ten seconds, "
+            "ends by itself, and can be lifted early by any administrator.",
         ],
     }
     return body
@@ -248,8 +267,11 @@ def propose_response_simulation(
     case = db.scalar(select(Case).where(Case.id == case_id).with_for_update())
     if case is None:
         raise AppError(404, "not_found", "Case not found")
-    if payload.action_type not in SIMULATED_ACTIONS:
+    if payload.action_type not in SIMULATED_ACTIONS | EXECUTED_ACTIONS:
         raise AppError(400, "invalid_action", "Unsupported simulation action")
+    executed = payload.action_type in EXECUTED_ACTIONS
+    if not executed and (payload.sensor_id is not None or payload.duration_minutes is not None):
+        raise AppError(400, "invalid_action", "Only an IP block takes a sensor and a duration")
     target = payload.target.strip()
     if not target:
         raise AppError(400, "invalid_target", "Target cannot be blank")
@@ -265,6 +287,21 @@ def propose_response_simulation(
             raise AppError(
                 400, "invalid_target", "Source IP simulation requires a valid IP address"
             ) from exc
+    duration_minutes: int | None = None
+    if executed:
+        try:
+            target = ip_block.normalize_block_target(target)
+            duration_minutes = ip_block.validate_minutes(payload.duration_minutes)
+        except ip_block.BlockPolicyError as exc:
+            raise AppError(400, "invalid_target", str(exc)) from exc
+        if payload.sensor_id is None or payload.sensor_id not in {
+            item["sensor_id"] for item in _enforcing_sensors(db)
+        }:
+            raise AppError(
+                400,
+                "sensor_cannot_enforce",
+                "Choose an active sensor that was started with IP blocking allowed",
+            )
     if payload.idempotency_key:
         existing = db.scalar(
             select(ResponseSimulation).where(
@@ -292,7 +329,10 @@ def propose_response_simulation(
         status="proposed",
         requested_by=actor.id,
         idempotency_key=payload.idempotency_key,
-        expires_at=datetime.now(UTC) + timedelta(days=7),
+        # A real block must be approved while the evidence is fresh.
+        expires_at=datetime.now(UTC) + (timedelta(hours=24) if executed else timedelta(days=7)),
+        sensor_id=payload.sensor_id if executed else None,
+        duration_minutes=duration_minutes,
     )
     db.add(simulation)
     try:
@@ -438,14 +478,30 @@ def approve_response_simulation(
     simulation.status = "approved"
     simulation.approved_by = actor.id
     simulation.approved_at = datetime.now(UTC)
+    executed = simulation.action_type in EXECUTED_ACTIONS
+    if executed:
+        # From here the sensor picks it up on its next signed heartbeat.
+        simulation.enforcement_status = ip_block.PENDING
     write_audit(
         db,
         actor_id=actor.id,
-        action="response.simulation.approved",
+        action="response.block.approved" if executed else "response.simulation.approved",
         target_type="response_simulation",
         target_id=str(simulation.id),
         ip_address=client_ip(request),
-        details={"case_id": str(case_id), "action_type": simulation.action_type},
+        details={
+            "case_id": str(case_id),
+            "action_type": simulation.action_type,
+            **(
+                {
+                    "target": simulation.target,
+                    "sensor_id": str(simulation.sensor_id),
+                    "duration_minutes": simulation.duration_minutes,
+                }
+                if executed
+                else {}
+            ),
+        },
     )
     db.commit()
     db.refresh(simulation)
@@ -470,6 +526,8 @@ def simulate_response(
     )
     if simulation is None:
         raise AppError(404, "not_found", "Response simulation not found")
+    if simulation.action_type in EXECUTED_ACTIONS:
+        raise AppError(409, "invalid_transition", "An IP block is enforced by its sensor")
     if simulation.status != "approved":
         raise AppError(409, "invalid_transition", "Only approved simulations can be recorded")
     simulation.status = "simulated"
@@ -488,6 +546,47 @@ def simulate_response(
             "target": simulation.target,
             "execution": "none; audit record only",
         },
+    )
+    db.commit()
+    db.refresh(simulation)
+    return _response_simulation(simulation)
+
+
+@router.post("/{case_id}/responses/{response_id}/unblock")
+def lift_ip_block(
+    case_id: UUID,
+    response_id: UUID,
+    db: DbDep,
+    actor: AdminWriter,
+    request: Request,
+) -> dict:
+    """Lift a block early. Any administrator may do this, including the requester:
+    removing a block is the safe direction and must never wait for a second person."""
+    simulation = db.scalar(
+        select(ResponseSimulation)
+        .where(
+            ResponseSimulation.id == response_id,
+            ResponseSimulation.case_id == case_id,
+        )
+        .with_for_update()
+    )
+    if simulation is None or simulation.action_type not in EXECUTED_ACTIONS:
+        raise AppError(404, "not_found", "IP block not found")
+    if simulation.enforcement_status == ip_block.PENDING:
+        simulation.enforcement_status = ip_block.CANCELLED
+        simulation.removed_at = datetime.now(UTC)
+    elif simulation.enforcement_status == ip_block.APPLIED:
+        simulation.enforcement_status = ip_block.REMOVAL_PENDING
+    else:
+        raise AppError(409, "invalid_transition", "This block is not active")
+    write_audit(
+        db,
+        actor_id=actor.id,
+        action="response.block.lift_requested",
+        target_type="response_simulation",
+        target_id=str(simulation.id),
+        ip_address=client_ip(request),
+        details={"case_id": str(case_id), "target": simulation.target},
     )
     db.commit()
     db.refresh(simulation)
@@ -593,8 +692,37 @@ def _response_simulation(item: ResponseSimulation) -> dict:
         "rejected_at": item.rejected_at,
         "rejection_note": item.rejection_note,
         "simulated_at": item.simulated_at,
-        "execution": "none; audit record only",
+        "execution": (
+            "firewall block on the chosen sensor host"
+            if item.action_type in EXECUTED_ACTIONS
+            else "none; audit record only"
+        ),
+        "sensor_id": item.sensor_id,
+        "duration_minutes": item.duration_minutes,
+        "enforcement_status": item.enforcement_status,
+        "enforcement_detail": item.enforcement_detail,
+        "enforced_at": item.enforced_at,
+        "block_until": item.block_until,
+        "removed_at": item.removed_at,
     }
+
+
+def _enforcing_sensors(db: Session) -> list[dict]:
+    """Active sensors whose last start announced that they may apply IP blocks."""
+    rows = db.execute(
+        select(SensorRegistration, DataSource)
+        .join(DataSource, DataSource.id == SensorRegistration.data_source_id)
+        .where(SensorRegistration.status == "active")
+    ).all()
+    return [
+        {
+            "sensor_id": registration.sensor_id,
+            "name": (source.config or {}).get("host_name") or source.name,
+            "last_seen_at": registration.last_seen_at,
+        }
+        for registration, source in rows
+        if ip_block.CAPABILITY in ((source.config or {}).get("capabilities") or [])
+    ]
 
 
 def _same_response_request(

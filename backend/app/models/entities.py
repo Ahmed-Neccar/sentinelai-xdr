@@ -444,6 +444,14 @@ class ResponseSimulation(TenantOwned, Base):
     rejected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     rejection_note: Mapped[str] = mapped_column(Text, default="")
     simulated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Only for the executed action block_source_ip; NULL for simulations.
+    sensor_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), nullable=True, index=True)
+    duration_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    enforcement_status: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    enforcement_detail: Mapped[str] = mapped_column(String(255), default="", server_default="")
+    enforced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    block_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    removed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     case: Mapped[Case] = relationship(back_populates="response_simulations")
 
