@@ -99,11 +99,20 @@ class SensorAuthorizationError(RuntimeError):
 
 
 class ApiClient:
-    def __init__(self, base_url: str, email: str, password: str, sensor_id: str) -> None:
+    def __init__(
+        self,
+        base_url: str,
+        email: str,
+        password: str,
+        sensor_id: str,
+        verify: str | bool = True,
+    ) -> None:
         self.base_url = base_url.rstrip("/")
         self.sensor_id = sensor_id
         self.private_key, self.public_key = get_or_create_sensor_key()
-        self.session = httpx.Client(timeout=10.0, follow_redirects=False)
+        # `verify` is True (the system's trusted authorities) or the path of
+        # the one certificate this sensor accepts for its server.
+        self.session = httpx.Client(timeout=10.0, follow_redirects=False, verify=verify)
         response = self.session.post(
             f"{self.base_url}/api/v1/auth/login",
             json={"email": email, "password": password},
@@ -361,6 +370,13 @@ def main() -> int:
         ),
     )
     parser.add_argument(
+        "--ca-file",
+        help=(
+            "Certificate file (PEM) to trust for an https:// server instead of the system's "
+            "authorities, for a server with a private or self-signed certificate"
+        ),
+    )
+    parser.add_argument(
         "--allow-isolation",
         action="store_true",
         help=(
@@ -415,6 +431,16 @@ def main() -> int:
             print(f"Cannot enable Windows Security log collection: {exc}", file=sys.stderr)
             return 4
 
+    tls_verify: str | bool = True
+    if args.ca_file:
+        ca_path = Path(args.ca_file).expanduser().resolve()
+        if not ca_path.is_file():
+            print(f"Certificate file not found: {ca_path}", file=sys.stderr)
+            return 2
+        if not args.server.lower().startswith("https://"):
+            print("--ca-file only makes sense with an https:// server address.", file=sys.stderr)
+            return 2
+        tls_verify = str(ca_path)
     allowed_actions = {
         kind
         for kind, enabled in (
@@ -438,7 +464,9 @@ def main() -> int:
         # Asked right after isolation rules are added; if this fails the
         # isolation is removed again, because nobody could lift it remotely.
         try:
-            return httpx.get(f"{args.server.rstrip('/')}/api/v1/health", timeout=5.0).is_success
+            return httpx.get(
+                f"{args.server.rstrip('/')}/api/v1/health", timeout=5.0, verify=tls_verify
+            ).is_success
         except httpx.HTTPError:
             return False
 
@@ -468,7 +496,7 @@ def main() -> int:
         password = getpass.getpass("SentinelAI login password: ")
     try:
         sensor_id = args.sensor_id or get_or_create_sensor_id()
-        api = ApiClient(args.server, email, password, sensor_id)
+        api = ApiClient(args.server, email, password, sensor_id, verify=tls_verify)
         capabilities = ["network.headers"]
         if args.windows_events:
             capabilities.append("windows.logon_events")

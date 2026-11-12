@@ -125,6 +125,18 @@ These follow the same rules as an enforced IP block (proposal, approval by a dif
 
 Both the sensor and the removal script judge firewall commands by their exit code, not their text, because `netsh` messages are translated on a non-English Windows.
 
+## Sensors on other computers (lab, private certificate)
+
+A sensor on another computer needs the server over HTTPS; without it the sensor refuses every response action. For a lab on one local network:
+
+1. Create a certificate that is also valid for this computer's network address: `python scripts\make_lab_tls_cert.py --force --name <this computer's address>`. Browsers will warn again for `https://localhost:8443`.
+2. In an elevated PowerShell, limit who may connect **before** exposing anything: `.\scripts\lan_sensor_access.ps1 -Action Enable -SensorAddress <other computer's address>`. Docker Desktop's own firewall rule would otherwise let every computer on the network reach the port; this adds block rules for every address except the listed ones.
+3. Bind the HTTPS front to the network: set `TLS_BIND_ADDRESS=<this computer's address>` in `.env` and run `docker compose --profile tls-lab up -d tls-proxy`.
+4. Build the package with the public certificate: `.\scripts\package_sensor.ps1 -Server https://<this computer's address>:8443 -CaFile .data\tls-lab\localhost.crt`. The sensor then trusts exactly that certificate (`--ca-file`) instead of the system's authorities.
+5. On the other computer: install Python 3.12 and Npcap, extract the package, run `install.ps1`, then `start.ps1 -Interface "<adapter>"` with `-AllowIpBlocks`, `-AllowIsolation` or `-AllowAccountDisable` as wanted. Create its `ingestion_service` account on the Users page first.
+
+This is a lab arrangement. The certificate is self-signed and tied to an address that DHCP can change; the panel becomes reachable from the listed computers as well as the sensor API; and the stack still runs in development mode. To undo: remove `TLS_BIND_ADDRESS`, recreate `tls-proxy`, then `lan_sensor_access.ps1 -Action Disable`.
+
 ## Metrics scrape
 
 Set a private `METRICS_TOKEN` (at least 32 characters in production) in `.env` and restart the API. Scrape `http://backend:8000/api/v1/metrics` from a monitoring service on the Compose network with `Authorization: Bearer <token>`. Without the token, the endpoint is disabled. The current endpoint exposes process-local HTTP request totals and duration histograms with route templates, method, and status only; it does not label metrics with tenant, user, IP, or event data.
