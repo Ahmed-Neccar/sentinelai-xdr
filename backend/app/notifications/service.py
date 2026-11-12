@@ -53,7 +53,64 @@ def enqueue_detection_notifications(db: Session, detection: Detection) -> int:
     return queued
 
 
+RESPONSE_EVENTS: dict[str, tuple[str, str]] = {
+    # event -> (severity shown in the message, title)
+    "approval_needed": ("high", "Approval needed: a real IP block was proposed"),
+    "rejected": ("informational", "IP block proposal rejected"),
+    "applied": ("medium", "IP block applied by the sensor"),
+    "refused": ("high", "IP block refused by the sensor"),
+    "failed": ("high", "IP block failed on the sensor"),
+    "removed": ("informational", "IP block lifted"),
+}
+
+
+def response_message(
+    event: str, *, case_id: str, target: str, sensor: str, minutes: int | None, detail: str = ""
+) -> dict[str, Any]:
+    severity, title = RESPONSE_EVENTS[event]
+    summary = f"Address {target} on sensor {sensor}"
+    if minutes:
+        summary += f" for {minutes} minutes"
+    if detail:
+        summary += f". {detail}"
+    message = build_message(
+        event_type=f"response.{event}",
+        title=title,
+        severity=severity,
+        case_id=case_id,
+        created_at=datetime.now(UTC).isoformat(timespec="seconds"),
+        summary=summary,
+    )
+    message["note"] = (
+        "Open the case in SentinelAI to review. A different administrator must approve."
+        if event == "approval_needed"
+        else "Recorded in the SentinelAI audit log."
+    )
+    return message
+
+
+def enqueue_response_notifications(db: Session, message: dict[str, Any]) -> int:
+    """Queue one response-workflow message for every enabled channel.
+
+    Runs in the caller's transaction, like detections. Severity thresholds do
+    not apply: these are operational messages about an action people asked for.
+    """
+    channels = db.scalars(
+        select(NotificationChannel).where(NotificationChannel.enabled.is_(True))
+    ).all()
+    for channel in channels:
+        db.add(NotificationDelivery(channel_id=channel.id, kind="response", payload=message))
+    return len(channels)
+
+
 def _message_for(db: Session, delivery: NotificationDelivery, channel: NotificationChannel) -> dict:
+    if delivery.kind == "response" and isinstance(delivery.payload, dict):
+        message = dict(delivery.payload)
+        if not channel.include_summary:
+            # The summary names an address and a host; it leaves the
+            # installation only for channels that opted in, as for findings.
+            message.pop("summary", None)
+        return message
     if delivery.kind == "test" or delivery.detection_id is None:
         return build_message(
             event_type="test",

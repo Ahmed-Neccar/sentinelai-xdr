@@ -32,6 +32,7 @@ from app.models import (
     User,
 )
 from app.response import ip_block
+from app.response.notify import notify_block_event
 from app.schemas.common import Page, TokenUser
 from app.workers.dispatch import enqueue_ingestion
 
@@ -536,6 +537,7 @@ async def report_response_action(
             "detail": action.enforcement_detail,
         },
     )
+    notify_block_event(db, status, action, action.enforcement_detail)
     db.commit()
     return {"id": action.id, "enforcement_status": status, "changed": True}
 

@@ -357,3 +357,9 @@ The Remote Desktop and Word-to-PowerShell rules were validated against controlle
 - The Users page was used for the first time to create the second administrator and showed all five accounts correctly.
 - Not exercised live: lifting a block early, a refused (protected) address, a failed firewall command, expiry while the sensor is stopped, and a sensor on another machine over TLS. Whether traffic to the blocked address was actually dropped was not measured; the rules were only read back.
 - Gap found by the operator during the test: an administrator has no way to learn that an approval is waiting other than opening the case. There is no pending-approval indicator or notification.
+
+## Update — 2026-11-12 (approvals are now visible)
+
+- Pending response proposals are listed by `GET /cases/pending-approvals`. The panel polls it every 20 seconds, shows the count on the Cases menu item, and shows a "Waiting for approval" table at the top of Overview and Cases with Approve and Reject buttons for administrators other than the requester.
+- IP-block workflow events are queued to every enabled notification channel through the existing outbox (migration 013 adds a stored message to deliveries): approval needed, rejected, applied, refused, failed, lifted. The address and sensor name are in the summary only, so they leave the installation only for channels with "include summary" on, as for findings.
+- Verified: two new unit tests for the messages, full backend suite, Ruff, MyPy, panel build; deployed with migration 013; the new route answers 401 without a session (not shadowed by the case-ID route). Not yet verified: the banner in a browser, and an actual notification delivery for a block event.

@@ -214,3 +214,41 @@ def test_channel_input_validates_destination_and_severity() -> None:
                 "min_severity": "informational",
             }
         )
+
+
+def test_response_message_names_the_action_and_keeps_details_in_the_summary() -> None:
+    from app.notifications.service import RESPONSE_EVENTS, response_message
+
+    message = response_message(
+        "approval_needed", case_id="case-1", target="203.0.113.9", sensor="LAB-PC", minutes=5
+    )
+    assert message["type"] == "response.approval_needed"
+    assert message["severity"] == "high" and message["case_id"] == "case-1"
+    # The address and host only appear in the summary, which channels can leave out.
+    assert "203.0.113.9" not in message["title"] and "LAB-PC" not in message["title"]
+    assert message["summary"] == "Address 203.0.113.9 on sensor LAB-PC for 5 minutes"
+    assert "different administrator" in message["note"]
+    refused = response_message(
+        "refused", case_id="c", target="192.168.1.1", sensor="LAB-PC", minutes=None,
+        detail="protected address",
+    )
+    assert refused["summary"].endswith("on sensor LAB-PC. protected address")
+    assert set(RESPONSE_EVENTS) == {
+        "approval_needed", "rejected", "applied", "refused", "failed", "removed"
+    }
+
+
+def test_response_delivery_drops_the_summary_unless_the_channel_opted_in() -> None:
+    from types import SimpleNamespace
+
+    from app.notifications.service import _message_for, response_message
+
+    payload = response_message(
+        "applied", case_id="c", target="203.0.113.9", sensor="LAB-PC", minutes=5
+    )
+    delivery_row = SimpleNamespace(kind="response", payload=payload, detection_id=None)
+    private = _message_for(None, delivery_row, SimpleNamespace(include_summary=False, name="x"))
+    assert "summary" not in private and "203.0.113.9" not in json.dumps(private)
+    full = _message_for(None, delivery_row, SimpleNamespace(include_summary=True, name="x"))
+    assert "203.0.113.9" in full["summary"]
+    assert "summary" in payload  # the stored message is not modified

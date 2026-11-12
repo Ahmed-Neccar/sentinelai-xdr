@@ -212,7 +212,9 @@ class NotificationDelivery(TenantOwned, Base):
     detection_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("detections.id", ondelete="CASCADE"), nullable=True
     )
-    kind: Mapped[str] = mapped_column(String(32))  # detection | test
+    kind: Mapped[str] = mapped_column(String(32))  # detection | test | response
+    # Ready-made message for kind "response"; detections are rendered at send time.
+    payload: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     status: Mapped[str] = mapped_column(
         String(32), nullable=False, default="pending", server_default="pending", index=True
     )

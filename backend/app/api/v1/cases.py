@@ -28,6 +28,7 @@ from app.models import (
     UserRole,
 )
 from app.response import ip_block
+from app.response.notify import notify_block_event
 from app.schemas.common import Page, TokenUser
 
 router = APIRouter(prefix="/cases", tags=["cases"])
@@ -103,6 +104,37 @@ def list_cases(
         stmt.order_by(Case.updated_at.desc()).offset((page - 1) * page_size).limit(page_size)
     ).all()
     return Page(items=[_case(c) for c in rows], page=page, page_size=page_size, total=total)
+
+
+@router.get("/pending-approvals")
+def pending_approvals(db: DbDep, actor: Reader) -> dict:
+    """Response proposals still waiting for a decision, for the panel's reminder."""
+    now = datetime.now(UTC)
+    rows = db.execute(
+        select(ResponseSimulation, Case.title, User.email)
+        .join(Case, Case.id == ResponseSimulation.case_id)
+        .outerjoin(User, User.id == ResponseSimulation.requested_by)
+        .where(ResponseSimulation.status == "proposed", ResponseSimulation.expires_at > now)
+        .order_by(ResponseSimulation.created_at)
+        .limit(50)
+    ).all()
+    is_admin = ADMIN in actor.roles
+    items = [
+        {
+            **_response_simulation(simulation),
+            "case_title": title,
+            "requested_by_email": email,
+            "executed": simulation.action_type in EXECUTED_ACTIONS,
+            # The requester may not decide their own proposal.
+            "can_decide": is_admin and simulation.requested_by != actor.id,
+        }
+        for simulation, title, email in rows
+    ]
+    return {
+        "items": items,
+        "waiting_for_me": sum(1 for item in items if item["can_decide"]),
+        "real_blocks": sum(1 for item in items if item["executed"]),
+    }
 
 
 @router.get("/assignees")
@@ -372,6 +404,9 @@ def propose_response_simulation(
             "target": simulation.target,
         },
     )
+    if executed:
+        # Without this, the second administrator only finds out by opening the case.
+        notify_block_event(db, "approval_needed", simulation)
     db.commit()
     db.refresh(simulation)
     return _response_simulation(simulation)
@@ -433,6 +468,8 @@ def reject_response_simulation(
         ip_address=client_ip(request),
         details={"case_id": str(case_id), "note": simulation.rejection_note},
     )
+    if simulation.action_type in EXECUTED_ACTIONS:
+        notify_block_event(db, "rejected", simulation)
     db.commit()
     db.refresh(simulation)
     return _response_simulation(simulation)
