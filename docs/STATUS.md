@@ -312,3 +312,11 @@ The Remote Desktop and Word-to-PowerShell rules were validated against controlle
 - Sensor accounts are isolated from analyst APIs: signed in as the host sensor account, `GET` on events, detections, cases, hosts, users, audit logs, rules, notification channels, registered sensors and ingestion jobs all returned 403, as did creating a user, rotating or revoking a sensor, and file upload. Only its own live-session listing returned 200.
 - Not tested here: a sensor presenting another sensor's ID or key, replayed requests, a second session with the same credential, and re-login from the guest after revocation (the server-side state makes it impossible, but the attempt was not observed). The guest connection was unencrypted; a sensor on a real network still requires TLS.
 - Interface fix: the "Registered sensors" panel was a collapsed disclosure with its marker hidden, so it looked empty. It now opens by default.
+
+## Update — 2026-11-12 (Azure Activity Log connector, first live poll)
+
+- A read-only `azure_activity` connector (`azure-lab`) was added in the panel against an Azure for Students subscription, using an app registration that holds only the built-in Reader role on that subscription. The client secret was entered by the operator and is stored encrypted.
+- The first scheduled poll (08:50 UTC, four minutes after creation) finished `healthy` with no error: 2 events received, 2 accepted, not truncated, cursor advanced, `cloud_connector.poll_completed` audited.
+- Both events are the operator's own Reader role assignment (`Microsoft.Authorization/roleAssignments/write`, Started and Succeeded). They were normalized as `cloud.azure.activity` with actor, action, category, tenant ID, correlation ID, status and outcome populated.
+- Observed gaps, not yet investigated: `src_ip`, `resource_id` and `cloud_resource` are empty on both events although Azure normally reports a caller address and a resource ID. Two events of one operation type are not a representative sample; failed operations, paging, throttling and secret expiry have not been exercised.
+- Entra sign-in polling was deliberately skipped (requires a P1/P2 licence). OIDC sign-in against this tenant is still pending and needs the panel served over HTTPS first.
