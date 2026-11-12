@@ -66,6 +66,11 @@ CANCELLED = "cancelled"  # lifted before the sensor ever applied it
 
 SENSOR_RESULTS = {"applied", "refused", "failed", "removed"}
 
+# An approved action must reach its sensor within this time or it is cancelled.
+# A sensor heartbeats every ten seconds, so a longer wait means it was not
+# running, and the situation that justified the action may have changed.
+DELIVERY_WINDOW = timedelta(minutes=15)
+
 # A local Windows account name: no path, option or shell characters, and it
 # cannot start with a character that a command could read as a switch.
 _ACCOUNT_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._ -]{0,19}$")

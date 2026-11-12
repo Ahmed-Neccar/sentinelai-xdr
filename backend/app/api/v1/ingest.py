@@ -24,6 +24,7 @@ from app.core.security import hash_password
 from app.ingestion.parsers import RowError, normalize_generic, validate_normalized_event
 from app.ingestion.service import safe_filename
 from app.models import (
+    AuditLog,
     DataSource,
     IngestionJob,
     ResponseSimulation,
@@ -1005,6 +1006,25 @@ def _pending_response_actions(
     actions: list[dict] = []
     for row in rows:
         spec = ip_block.EXECUTED[row.action_type]
+        if (
+            row.enforcement_status == ip_block.PENDING
+            and row.approved_at is not None
+            and now - row.approved_at > ip_block.DELIVERY_WINDOW
+        ):
+            # Approved while the sensor was away. Applying it whenever the
+            # sensor next starts, perhaps days later, is not what was approved.
+            row.enforcement_status = ip_block.CANCELLED
+            row.enforcement_detail = "not delivered to the sensor in time"
+            row.removed_at = now
+            db.add(
+                AuditLog(
+                    action=f"response.{spec.audit}.delivery_expired",
+                    target_type="response_simulation",
+                    target_id=str(row.id),
+                    details={"target": row.target, "sensor_id": str(registration.sensor_id)},
+                )
+            )
+            continue
         if row.enforcement_status == ip_block.PENDING and row.status == "approved":
             actions.append(
                 {

@@ -90,3 +90,11 @@ def test_account_names_that_could_be_read_as_options_or_commands_are_rejected(na
 def test_ordinary_account_names_are_accepted() -> None:
     for name in ("sentinel-test", "Ahmed", "lab user", "svc_backup.01"):
         assert ip_block.normalize_account_name(f" {name} ") == name
+
+
+def test_an_approved_action_must_reach_its_sensor_promptly() -> None:
+    from datetime import timedelta
+
+    # Long enough for a sensor that heartbeats every ten seconds, short enough
+    # that an action cannot fire days later when a stopped sensor comes back.
+    assert timedelta(minutes=5) <= ip_block.DELIVERY_WINDOW <= timedelta(hours=1)
