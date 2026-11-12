@@ -33,6 +33,9 @@ class UserPatch(BaseModel):
     is_active: bool | None = None
     roles: list[str] | None = None
     password: str | None = Field(default=None, min_length=12, max_length=128)
+    # Forget the bound SSO identity so the next SSO sign-in with this email
+    # binds again, for example after the person's provider account was rebuilt.
+    unlink_sso: bool = False
 
 
 def serialize(user: User) -> dict:
@@ -42,6 +45,8 @@ def serialize(user: User) -> dict:
         "full_name": user.full_name,
         "is_active": user.is_active,
         "roles": [link.role.name for link in user.roles if link.role],
+        "mfa_enabled": user.mfa_enabled_at is not None,
+        "sso_linked": user.oidc_subject is not None,
         "created_at": user.created_at,
     }
 
@@ -156,6 +161,10 @@ def patch_user(
     if payload.password:
         user.hashed_password = hash_password(payload.password)
         user.token_version += 1
+    if payload.unlink_sso and user.oidc_subject is not None:
+        user.oidc_issuer = None
+        user.oidc_subject = None
+        user.token_version += 1
     if payload.roles is not None:
         user.roles.clear()
         db.flush()
@@ -175,6 +184,8 @@ def patch_user(
         target_type="user",
         target_id=str(user.id),
         ip_address=client_ip(request),
+        # Field names only; never the new password or other values.
+        details={"changed": sorted(payload.model_dump(exclude_unset=True, exclude_none=True))},
     )
     db.commit()
     loaded = db.scalar(

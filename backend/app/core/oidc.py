@@ -5,6 +5,7 @@ import hashlib
 import hmac
 import secrets
 from datetime import UTC, datetime, timedelta
+from typing import Any
 from urllib.parse import urlencode, urlsplit
 
 import httpx
@@ -123,6 +124,33 @@ def email_is_verified(claims: dict) -> bool:
         and claims.get("iss") == settings.oidc_issuer
         and claims.get("xms_edov") is True
     )
+
+
+def select_account(bound_account: Any, email_account: Any) -> tuple[Any, bool]:
+    """Choose the local account for a validated SSO identity.
+
+    `bound_account` is the account already bound to this issuer and subject,
+    `email_account` the account whose email equals the verified email claim.
+    Returns the account and whether it must now be bound. A bound identity
+    wins regardless of its current email, and an email match is accepted only
+    for an account that has never been bound, so changing an email address at
+    the provider cannot take over somebody else's account.
+    """
+    if bound_account is not None:
+        return bound_account, False
+    if email_account is None:
+        raise AppError(
+            403,
+            "sso_user_not_provisioned",
+            "Your organization administrator must provision your account before SSO sign-in",
+        )
+    if email_account.oidc_subject is not None:
+        raise AppError(
+            403,
+            "sso_identity_mismatch",
+            "This account is linked to a different single sign-on identity",
+        )
+    return email_account, True
 
 
 def exchange_and_validate(code: str, verifier: str, nonce: str) -> dict:

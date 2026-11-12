@@ -153,3 +153,30 @@ def test_other_providers_still_require_the_standard_email_verified_claim(monkeyp
     lookalike = "https://login.microsoftonline.com.example.com/tenant/v2.0"
     monkeypatch.setattr(settings, "oidc_issuer", lookalike)
     assert not oidc.email_is_verified({"iss": lookalike, "xms_edov": True})
+
+
+class _Account:
+    def __init__(self, oidc_subject: str | None = None) -> None:
+        self.oidc_subject = oidc_subject
+
+
+def test_sso_account_selection_prefers_the_bound_identity_over_email() -> None:
+    bound, other = _Account("subject-a"), _Account()
+    assert oidc.select_account(bound, other) == (bound, False)
+    assert oidc.select_account(bound, None) == (bound, False)
+
+
+def test_sso_account_selection_binds_an_unbound_email_match_once() -> None:
+    fresh = _Account()
+    assert oidc.select_account(None, fresh) == (fresh, True)
+
+
+def test_sso_account_selection_rejects_unprovisioned_and_rebound_accounts() -> None:
+    with pytest.raises(AppError) as missing:
+        oidc.select_account(None, None)
+    assert missing.value.code == "sso_user_not_provisioned"
+    # Same email, but the account already belongs to another provider subject:
+    # an attacker who renamed their provider email must not get in.
+    with pytest.raises(AppError) as mismatch:
+        oidc.select_account(None, _Account("someone-else"))
+    assert mismatch.value.code == "sso_identity_mismatch"

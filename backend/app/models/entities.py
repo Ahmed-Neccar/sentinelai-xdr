@@ -53,6 +53,9 @@ class User(TenantOwned, Base):
     __table_args__ = (
         UniqueConstraint("organization_id", "email"),
         UniqueConstraint("organization_id", "id"),
+        UniqueConstraint(
+            "organization_id", "oidc_issuer", "oidc_subject", name="uq_users_org_oidc_identity"
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
@@ -67,6 +70,10 @@ class User(TenantOwned, Base):
     mfa_recovery_code_hashes: Mapped[list] = mapped_column(JSONB, default=list)
     mfa_last_counter: Mapped[int | None] = mapped_column(Integer, nullable=True)
     mfa_challenge_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    # The identity provider's immutable subject, bound on the first SSO
+    # sign-in. Email can change at the provider; this pair cannot.
+    oidc_issuer: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    oidc_subject: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()

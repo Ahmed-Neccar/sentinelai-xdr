@@ -421,17 +421,54 @@ def _complete_oidc_callback(
     if organization is None:
         raise AppError(401, "sso_authentication_failed", "Organization is unavailable")
     set_organization_context(db, organization.id)
-    user = db.scalar(
-        select(User)
-        .options(selectinload(User.roles).selectinload(UserRole.role))
-        .where(User.email == identity["email"], User.organization_id == organization.id)
-        .with_for_update()
+    from app.core.config import settings
+
+    issuer = settings.oidc_issuer or ""
+    account_query = select(User).options(selectinload(User.roles).selectinload(UserRole.role))
+    bound_account = db.scalar(
+        account_query.where(
+            User.organization_id == organization.id,
+            User.oidc_issuer == issuer,
+            User.oidc_subject == identity["subject"],
+        ).with_for_update()
     )
-    if user is None or not user.is_active:
+    email_account = None
+    if bound_account is None:
+        email_account = db.scalar(
+            account_query.where(
+                User.email == identity["email"], User.organization_id == organization.id
+            ).with_for_update()
+        )
+    try:
+        user, bind_identity = oidc.select_account(bound_account, email_account)
+    except AppError as exc:
+        if exc.code == "sso_identity_mismatch" and email_account is not None:
+            write_audit(
+                db,
+                actor_id=None,
+                action="auth.sso_identity_mismatch",
+                target_type="user",
+                target_id=str(email_account.id),
+                ip_address=client_ip(request),
+            )
+            db.commit()
+        raise
+    if not user.is_active:
         raise AppError(
             403,
             "sso_user_not_provisioned",
             "Your organization administrator must provision your account before SSO sign-in",
+        )
+    if bind_identity:
+        user.oidc_issuer = issuer
+        user.oidc_subject = identity["subject"]
+        write_audit(
+            db,
+            actor_id=user.id,
+            action="auth.sso_identity_bound",
+            target_type="user",
+            target_id=str(user.id),
+            ip_address=client_ip(request),
         )
 
     page = _oidc_result_page({})
