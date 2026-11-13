@@ -209,6 +209,10 @@ def test_executed_response_actions_end_to_end() -> None:
                     body["duration_minutes"] = minutes
                 return client.post(responses, headers=admin1, json=body)
 
+            def approve_as_other_admin(item: dict) -> int:
+                path = f"{responses}/{item['id']}/approve"
+                return client.post(path, headers=admin2).status_code
+
             # -- what the server refuses before anything reaches a sensor ------
             assert propose("block_source_ip", "127.0.0.1").status_code == 400
             assert propose("block_source_ip", "203.0.113.9", minutes=1).status_code == 400
@@ -291,7 +295,7 @@ def test_executed_response_actions_end_to_end() -> None:
 
             # -- refusal reported by the sensor ---------------------------------
             gateway = propose("block_source_ip", "192.168.1.1").json()
-            assert client.post(f"{responses}/{gateway['id']}/approve", headers=admin2).status_code == 200
+            assert approve_as_other_admin(gateway) == 200
             assert sensor.heartbeat()[0]["id"] == gateway["id"]
             refused = sensor.report(gateway["id"], "refused", "protected address")
             assert refused.json()["enforcement_status"] == "refused"
@@ -317,7 +321,7 @@ def test_executed_response_actions_end_to_end() -> None:
             # -- account disable: cancelled before it reached the sensor --------
             account = propose("disable_local_account", "sentinel-test", minutes=10).json()
             assert account["target"] == "sentinel-test"
-            assert client.post(f"{responses}/{account['id']}/approve", headers=admin2).status_code == 200
+            assert approve_as_other_admin(account) == 200
             cancelled = client.post(f"{responses}/{account['id']}/unblock", headers=admin2)
             assert cancelled.json()["enforcement_status"] == "cancelled"
             assert sensor.heartbeat() == []
@@ -329,9 +333,10 @@ def test_executed_response_actions_end_to_end() -> None:
             ).json()
             other = Sensor(client, slug, other_login["email"], other_login["password"])
             other.start(["network.headers"], host="OTHER-PC")
-            assert propose("block_source_ip", "203.0.113.10", sensor_id=other.sensor_id).status_code == 400
+            not_opted_in = propose("block_source_ip", "203.0.113.10", sensor_id=other.sensor_id)
+            assert not_opted_in.status_code == 400
             mine = propose("block_source_ip", "203.0.113.11").json()
-            assert client.post(f"{responses}/{mine['id']}/approve", headers=admin2).status_code == 200
+            assert approve_as_other_admin(mine) == 200
             assert other.heartbeat() == []  # not offered to the other sensor
             assert other.report(mine["id"], "applied").status_code == 404
             assert sensor.heartbeat()[0]["id"] == mine["id"]

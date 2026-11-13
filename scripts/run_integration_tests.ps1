@@ -43,7 +43,7 @@ try {
 
     Write-Host "Migrating the test database ..."
     docker run @common -e "DATABASE_URL=$adminUrl" sentinelai-xdr-backend `
-        sh -c "cp -r /src/backend /work && cd /work && alembic upgrade head >/dev/null 2>&1"
+        sh -c "mkdir /work && cp -r /src/backend /work/ && cd /work/backend && alembic upgrade head >/dev/null 2>&1"
     if ($LASTEXITCODE -ne 0) { throw "Migrations failed on the test database." }
 
     Write-Host "Provisioning the least-privilege roles ..."
@@ -52,7 +52,8 @@ try {
     if ((Invoke-Quiet $provision) -ne 0) { throw "Role provisioning failed on the test database." }
 
     Write-Host "Running tests ..."
-    $script = "cp -r /src/backend /work && cd /work && pip install --quiet --disable-pip-version-check --root-user-action=ignore pytest pytest-cov >/dev/null 2>&1; python -m pytest -q -p no:cacheprovider $Tests"
+    # Same layout as the repository: some tests load files from ../scripts.
+    $script = "mkdir /work && cp -r /src/backend /src/scripts /work/ && cd /work/backend && pip install --quiet --disable-pip-version-check --root-user-action=ignore pytest pytest-cov >/dev/null 2>&1; python -m pytest -q -p no:cacheprovider $Tests"
     docker run @common -e "DATABASE_URL=$runtimeUrl" -e "MFA_TEST_DATABASE_URL=$runtimeUrl" `
         -e "TENANT_TEST_DATABASE_URL=$runtimeUrl" sentinelai-xdr-backend sh -c $script
     $code = $LASTEXITCODE
