@@ -49,9 +49,12 @@ function Show-BackendLog {
 }
 
 $adminPassword = "Rh-" + (New-Hex 12)
+# An unhardened installation typically still has the example file's placeholder
+# as its first administrator's password; the rehearsal starts from exactly that.
+$bootstrapPassword = if ($FromDevelopment) { "change-me-now" } else { $adminPassword }
 $common = @(
     "SENTINEL_BOOTSTRAP_ADMIN_EMAIL=rehearsal-admin@example.com",
-    "SENTINEL_BOOTSTRAP_ADMIN_PASSWORD=$adminPassword",
+    "SENTINEL_BOOTSTRAP_ADMIN_PASSWORD=$bootstrapPassword",
     "ACCESS_TOKEN_MINUTES=1",
     "API_BIND_ADDRESS=$Api",
     "POSTGRES_BIND_ADDRESS=127.0.0.1:15433"
@@ -85,6 +88,7 @@ $code = 1
 $env:REHEARSAL_API = "http://$Api"
 $env:REHEARSAL_ADMIN_EMAIL = "rehearsal-admin@example.com"
 $env:REHEARSAL_ADMIN_PASSWORD = $adminPassword
+$env:REHEARSAL_BOOTSTRAP_PASSWORD = $bootstrapPassword
 $env:REHEARSAL_TOKEN_MINUTES = "1"
 $env:REHEARSAL_SCRATCH = $Scratch
 Push-Location $ProjectRoot
@@ -98,10 +102,22 @@ try {
     if ($FromDevelopment) {
         & $Python (Join-Path $PSScriptRoot "rehearse_production.py") seed
         if ($LASTEXITCODE -ne 0) { throw "could not create the data to carry over" }
-        Write-Host "Running switch_to_production.ps1 against the isolated stack ..."
-        & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "switch_to_production.ps1") `
+        $switch = Join-Path $PSScriptRoot "switch_to_production.ps1"
+        Write-Host "Running switch_to_production.ps1 while the administrator still has the placeholder password ..."
+        $before = Get-Content -LiteralPath $EnvFile -Raw
+        & powershell -NoProfile -ExecutionPolicy Bypass -File $switch `
+            -Project $Project -EnvFile $EnvFile -Services "backend worker" -SkipBackup 2>&1 | Out-Null
+        $refused = ($LASTEXITCODE -ne 0) -and ((Get-Content -LiteralPath $EnvFile -Raw) -ceq $before)
+        Write-Host ("[{0}] the switch refuses to run and changes nothing while a default password works" -f $(if ($refused) { "ok" } else { "FAIL" }))
+        if (-not $refused) { throw "the switch did not refuse a default administrator password" }
+        & $Python (Join-Path $PSScriptRoot "rehearse_production.py") harden
+        if ($LASTEXITCODE -ne 0) { throw "could not change the administrator password" }
+        Write-Host "Running switch_to_production.ps1 again ..."
+        & powershell -NoProfile -ExecutionPolicy Bypass -File $switch `
             -Project $Project -EnvFile $EnvFile -Services "backend worker" -SkipBackup
         if ($LASTEXITCODE -ne 0) { throw "the switch script failed" }
+        $cleared = [bool](Get-Content -LiteralPath $EnvFile | Where-Object { $_ -ceq "SENTINEL_BOOTSTRAP_ADMIN_PASSWORD=" })
+        Write-Host ("[{0}] the placeholder bootstrap password was cleared from the environment file" -f $(if ($cleared) { "ok" } else { "FAIL" }))
         $mode = (Get-Content -LiteralPath $EnvFile | Where-Object { $_ -cmatch '^SENTINEL_ENV=' })
         Write-Host ("[{0}] the environment file now says {1}" -f $(if ($mode -ceq "SENTINEL_ENV=production") { "ok" } else { "FAIL" }), $mode)
         # The switch keeps its own copy of the old environment file; it holds throwaway values here.
@@ -119,7 +135,7 @@ catch { Write-Host "Error: $($_.Exception.Message)" }
 finally {
     if (-not $KeepStack) { Invoke-Compose "down --volumes --remove-orphans" | Out-Null }
     Pop-Location
-    foreach ($name in "REHEARSAL_API", "REHEARSAL_ADMIN_EMAIL", "REHEARSAL_ADMIN_PASSWORD", "REHEARSAL_TOKEN_MINUTES", "REHEARSAL_SCRATCH") {
+    foreach ($name in "REHEARSAL_API", "REHEARSAL_ADMIN_EMAIL", "REHEARSAL_ADMIN_PASSWORD", "REHEARSAL_BOOTSTRAP_PASSWORD", "REHEARSAL_TOKEN_MINUTES", "REHEARSAL_SCRATCH") {
         Remove-Item "Env:$name" -ErrorAction SilentlyContinue
     }
     Remove-Item -LiteralPath $Scratch -Recurse -Force -ErrorAction SilentlyContinue

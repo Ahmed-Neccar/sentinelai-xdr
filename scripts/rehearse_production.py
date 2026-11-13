@@ -19,6 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "sensor"))
 BASE = os.environ["REHEARSAL_API"]
 ADMIN = os.environ["REHEARSAL_ADMIN_EMAIL"]
 PASSWORD = os.environ["REHEARSAL_ADMIN_PASSWORD"]
+BOOTSTRAP = os.environ.get("REHEARSAL_BOOTSTRAP_PASSWORD", PASSWORD)
 TOKEN_MINUTES = int(os.environ.get("REHEARSAL_TOKEN_MINUTES", "1"))
 failures: list[str] = []
 
@@ -33,7 +34,7 @@ def seed() -> int:
     """Before a switch: create data that must still work afterwards."""
     carried = Path(os.environ["REHEARSAL_SCRATCH"]) / "carried.json"
     with httpx.Client(base_url=BASE, timeout=15) as client:
-        login = client.post("/api/v1/auth/login", json={"email": ADMIN, "password": PASSWORD})
+        login = client.post("/api/v1/auth/login", json={"email": ADMIN, "password": BOOTSTRAP})
         if login.status_code != 200:
             print(f"seed: administrator sign-in failed ({login.status_code})")
             return 1
@@ -77,6 +78,25 @@ def seed() -> int:
     return 0
 
 
+def harden() -> int:
+    """Replace the administrator's placeholder password, as the operator must."""
+    with httpx.Client(base_url=BASE, timeout=15) as client:
+        login = client.post("/api/v1/auth/login", json={"email": ADMIN, "password": BOOTSTRAP})
+        if login.status_code != 200:
+            print(f"harden: sign-in with the bootstrap password failed ({login.status_code})")
+            return 1
+        body = login.json()
+        changed = client.patch(
+            f"/api/v1/users/{body['user']['id']}",
+            headers={"Authorization": f"Bearer {body['access_token']}"},
+            json={"password": PASSWORD},
+        )
+        again = client.post("/api/v1/auth/login", json={"email": ADMIN, "password": BOOTSTRAP})
+    ok = changed.status_code == 200 and again.status_code == 401
+    print(f"harden: administrator password changed ({changed.status_code}); old one now {again.status_code}")
+    return 0 if ok else 1
+
+
 def check_carried(client: httpx.Client, admin: dict[str, str]) -> None:
     carried = Path(os.environ["REHEARSAL_SCRATCH"]) / "carried.json"
     if not carried.exists():
@@ -102,6 +122,8 @@ def check_carried(client: httpx.Client, admin: dict[str, str]) -> None:
 def main() -> int:
     if len(sys.argv) > 1 and sys.argv[1] == "seed":
         return seed()
+    if len(sys.argv) > 1 and sys.argv[1] == "harden":
+        return harden()
     with httpx.Client(base_url=BASE, timeout=15) as client:
         check("health endpoint answers", client.get("/api/v1/health").status_code == 200)
         check("readiness reports dependencies", client.get("/api/v1/ready").status_code == 200)

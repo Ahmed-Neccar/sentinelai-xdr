@@ -104,8 +104,26 @@ try {
     if (-not $oldSuperuser) { $oldSuperuser = "sentinel_dev_only" }   # the Compose default
     $oidc = Get-EnvValue $original "OIDC_CLIENT_SECRET"
     if ($oidc -and $oidc.Length -lt 32) { throw "OIDC_CLIENT_SECRET is shorter than 32 characters; production mode would refuse it." }
-    $bootstrap = Get-EnvValue $original "SENTINEL_BOOTSTRAP_ADMIN_PASSWORD"
-    if ($bootstrap -and $bootstrap.Length -lt 12) { throw "SENTINEL_BOOTSTRAP_ADMIN_PASSWORD is shorter than 12 characters; remove that line or lengthen it first." }
+    # The application's own placeholder passwords, which production mode rejects.
+    # An installation created from the example file may still be using one for
+    # its first administrator, and hardening everything else would be pointless
+    # while that account opens with a published password.
+    $placeholders = @("change-me-now", "replace-with-a-separate-long-random-password")
+    $adminEmail = Get-EnvValue $original "SENTINEL_BOOTSTRAP_ADMIN_EMAIL"
+    if ($adminEmail) {
+        foreach ($candidate in $placeholders) {
+            $accepted = $false
+            try {
+                $body = @{ email = $adminEmail; password = $candidate } | ConvertTo-Json
+                Invoke-RestMethod -Method Post -Uri "http://$api/api/v1/auth/login" -ContentType "application/json" -Body $body -TimeoutSec 10 | Out-Null
+                $accepted = $true
+            }
+            catch { }
+            if ($accepted) {
+                throw "The administrator $adminEmail still signs in with a default password from the example configuration. Change it first (panel: Users > Set password), then run this again. Nothing was changed."
+            }
+        }
+    }
 
     Write-Host "1/6 Backup ..."
     if (-not $SkipBackup) {
@@ -133,6 +151,10 @@ try {
         POSTGRES_MIGRATOR_PASSWORD = (New-Hex 24)
         CORS_ORIGINS               = ($origins -join ",")
     }
+    # The bootstrap password is only read when the database has no users at
+    # all, so it is no longer needed, and production mode refuses to start
+    # while it holds a placeholder. It is cleared rather than left in the file.
+    if (Get-EnvValue $original "SENTINEL_BOOTSTRAP_ADMIN_PASSWORD") { $values["SENTINEL_BOOTSTRAP_ADMIN_PASSWORD"] = "" }
     # Keys that already protect stored data are kept; a new one would make that data unreadable.
     if (-not (Get-EnvValue $original "MFA_ENCRYPTION_KEY")) { $values["MFA_ENCRYPTION_KEY"] = New-UrlSafeKey }
     if (-not (Get-EnvValue $original "CLOUD_CONNECTOR_ENCRYPTION_KEY")) {
