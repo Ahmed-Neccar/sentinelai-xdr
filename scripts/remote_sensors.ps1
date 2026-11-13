@@ -87,11 +87,20 @@ function Update-Firewall($State) {
 
 function Restart-Front {
     Push-Location $ProjectRoot
+    # docker writes its normal progress to the error stream, which Windows
+    # PowerShell turns into a terminating error under "Stop". Judge it by its
+    # exit code instead.
+    $previous = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
     try {
-        docker compose --profile tls-lab up -d --force-recreate tls-proxy 2>&1 | Out-Null
-        if ($LASTEXITCODE -ne 0) { throw "docker compose could not restart the HTTPS front." }
+        cmd /c "docker compose --profile tls-lab up -d --force-recreate tls-proxy >nul 2>&1"
+        $code = $LASTEXITCODE
     }
-    finally { Pop-Location }
+    finally {
+        $ErrorActionPreference = $previous
+        Pop-Location
+    }
+    if ($code -ne 0) { throw "docker compose could not restart the HTTPS front (exit code $code)." }
 }
 
 function Show-Status {
