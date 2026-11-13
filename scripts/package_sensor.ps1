@@ -79,6 +79,10 @@ if (-not $Interface) {
 $Arguments = @("live_sensor.py", "--server", $Server, "--interface", $Interface, "--source-name", $SourceName, "--duration-seconds", "0")
 $Ca = "__CA__"
 if ($Ca) { $Arguments += @("--ca-file", (Join-Path $PSScriptRoot $Ca)) }
+# Put the sensor-credentials.json downloaded from the panel in this folder and
+# the sensor signs in with it; without the file it asks for email and password.
+$Credentials = Join-Path $PSScriptRoot "sensor-credentials.json"
+if (Test-Path -LiteralPath $Credentials) { $Arguments += @("--credentials-file", $Credentials) }
 if ($AllowIpBlocks) { $Arguments += "--enforce-blocks" }
 if ($AllowIsolation) { $Arguments += "--allow-isolation" }
 if ($AllowAccountDisable) { $Arguments += "--allow-account-disable" }

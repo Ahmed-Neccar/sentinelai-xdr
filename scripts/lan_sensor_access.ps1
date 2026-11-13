@@ -88,21 +88,27 @@ Assert-Administrator
 Get-NetFirewallRule -DisplayName $BlockRule, $PackageBlockRule -ErrorAction SilentlyContinue | Remove-NetFirewallRule
 
 if ($Action -eq "Enable") {
-    if ($SensorAddress.Count -eq 0) { throw "Give at least one -SensorAddress." }
+    # With no address listed, every other computer is blocked: the safe state
+    # between exposing the port and adding the first sensor computer.
     $ranges = Get-BlockedRanges $SensorAddress
     New-NetFirewallRule -DisplayName $BlockRule -Direction Inbound -Action Block -Protocol TCP `
         -LocalPort $Port -RemoteAddress $ranges -Profile Any | Out-Null
     # IPv6 clients are not part of this lab setup: block them all.
     New-NetFirewallRule -DisplayName $BlockRule -Direction Inbound -Action Block -Protocol TCP `
         -LocalPort $Port -RemoteAddress "::/0" -Profile Any | Out-Null
-    if ($PackageDownload) {
+    if ($PackageDownload -and $SensorAddress.Count -gt 0) {
         New-NetFirewallRule -DisplayName $PackageBlockRule -Direction Inbound -Action Block -Protocol TCP `
             -LocalPort $PackagePort -RemoteAddress $ranges -Profile Any | Out-Null
         # python.exe is not covered by Docker's rule, so the download port also needs an allow rule.
         New-NetFirewallRule -DisplayName $PackageBlockRule -Direction Inbound -Action Allow -Protocol TCP `
             -LocalPort $PackagePort -RemoteAddress $SensorAddress -Profile Any | Out-Null
     }
-    Write-Host "Only $($SensorAddress -join ', ') may reach port $Port from the network."
+    if ($SensorAddress.Count -gt 0) {
+        Write-Host "Only $($SensorAddress -join ', ') may reach port $Port from the network."
+    }
+    else {
+        Write-Host "No other computer may reach port $Port. Add sensor computers to allow them."
+    }
 }
 else {
     Write-Host "Removed the SentinelAI network access rules."

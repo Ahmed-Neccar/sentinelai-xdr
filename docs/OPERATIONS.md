@@ -127,15 +127,25 @@ Both the sensor and the removal script judge firewall commands by their exit cod
 
 ## Sensors on other computers (lab, private certificate)
 
-A sensor on another computer needs the server over HTTPS; without it the sensor refuses every response action. For a lab on one local network:
+A sensor on another computer needs the server over HTTPS; without it the sensor refuses every response action. `scripts\remote_sensors.ps1` (elevated PowerShell) sets this up for one local network and controls which computers may connect.
 
-1. Create a certificate that is also valid for this computer's network address: `python scripts\make_lab_tls_cert.py --force --name <this computer's address>`. Browsers will warn again for `https://localhost:8443`.
-2. In an elevated PowerShell, limit who may connect **before** exposing anything: `.\scripts\lan_sensor_access.ps1 -Action Enable -SensorAddress <other computer's address>`. Docker Desktop's own firewall rule would otherwise let every computer on the network reach the port; this adds block rules for every address except the listed ones.
-3. Bind the HTTPS front to the network: set `TLS_BIND_ADDRESS=<this computer's address>` in `.env` and run `docker compose --profile tls-lab up -d tls-proxy`.
-4. Build the package with the public certificate: `.\scripts\package_sensor.ps1 -Server https://<this computer's address>:8443 -CaFile .data\tls-lab\localhost.crt`. The sensor then trusts exactly that certificate (`--ca-file`) instead of the system's authorities.
-5. On the other computer: install Python 3.12 and Npcap, extract the package, run `install.ps1`, then `start.ps1 -Interface "<adapter>"` with `-AllowIpBlocks`, `-AllowIsolation` or `-AllowAccountDisable` as wanted. Create its `ingestion_service` account on the Users page first.
+Once, on the server computer:
 
-This is a lab arrangement. The certificate is self-signed and tied to an address that DHCP can change; the panel becomes reachable from the listed computers as well as the sensor API; and the stack still runs in development mode. To undo: remove `TLS_BIND_ADDRESS`, recreate `tls-proxy`, then `lan_sensor_access.ps1 -Action Disable`.
+```text
+.\scripts\remote_sensors.ps1 -Action Setup
+```
+
+It creates a certificate valid for this computer's network address, adds firewall rules that block the HTTPS port for every other computer, binds the HTTPS front to the network (`TLS_BIND_ADDRESS=0.0.0.0` in `.env`), and builds `dist\sentinel-sensor.zip` with the public certificate inside. The firewall rules come first because Docker Desktop's own rule would otherwise let every computer on the network reach the port. After Setup nobody else can connect yet.
+
+For each computer to add:
+
+1. `.\scripts\remote_sensors.ps1 -Action AddComputer -Address <its address>` on the server.
+2. In the panel, Sensors, "Add a sensor computer": enter a name and download `sensor-credentials.json`. The server generates the account and a random password, returns the password once and stores only its hash.
+3. On that computer: install Python 3.12 and Npcap, extract the package, put `sensor-credentials.json` in the folder, run `install.ps1`, then `start.ps1 -Interface "<adapter>"` with `-AllowIpBlocks`, `-AllowIsolation` or `-AllowAccountDisable` as wanted. The sensor trusts exactly the packaged certificate (`--ca-file`) and signs in from the file (`--credentials-file`).
+
+`-Action Status` shows the state, `RemoveComputer` withdraws a computer (revoke its sensor in the panel too), and `Disable` puts everything back on this computer only.
+
+Limits of this arrangement: the certificate is self-signed and tied to an address that DHCP can change (run Setup again and redistribute the package if it does); an allowed computer can open the panel's sign-in page as well as the sensor API; `sensor-credentials.json` holds the sensor's password in clear text on that computer, like `.env` does here; and the stack still runs in development mode. A real deployment needs a stable name, a certificate from a trusted authority and a separate server.
 
 ## Metrics scrape
 

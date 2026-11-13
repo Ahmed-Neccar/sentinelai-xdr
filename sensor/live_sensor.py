@@ -94,6 +94,21 @@ def next_sensor_request_counter() -> int:
         return current
 
 
+def credentials_from_file(path: Path) -> tuple[str, str]:
+    """Read {"email": ..., "password": ...} written by the panel's enrollment form."""
+    try:
+        data = json.loads(path.expanduser().read_text(encoding="utf-8-sig"))
+    except OSError as exc:
+        raise RuntimeError(f"cannot read {path.name}") from exc
+    except ValueError as exc:
+        raise RuntimeError(f"{path.name} is not valid JSON") from exc
+    email = data.get("email") if isinstance(data, dict) else None
+    password = data.get("password") if isinstance(data, dict) else None
+    if not isinstance(email, str) or "@" not in email or not isinstance(password, str) or not password:
+        raise RuntimeError(f"{path.name} must contain an email and a password")
+    return email.strip(), password
+
+
 class SensorAuthorizationError(RuntimeError):
     """The server rejected a sensor credential or live-session authorization."""
 
@@ -370,6 +385,13 @@ def main() -> int:
         ),
     )
     parser.add_argument(
+        "--credentials-file",
+        help=(
+            "JSON file with this sensor's own email and password, as downloaded from the "
+            "panel's Add sensor computer form, instead of typing them"
+        ),
+    )
+    parser.add_argument(
         "--ca-file",
         help=(
             "Certificate file (PEM) to trust for an https:// server instead of the system's "
@@ -490,6 +512,13 @@ def main() -> int:
             print(f"Using dedicated sensor credentials for {email} (password hidden).")
         except RuntimeError as exc:
             print(f"Cannot load project credentials: {exc}", file=sys.stderr)
+            return 2
+    elif args.credentials_file:
+        try:
+            email, password = credentials_from_file(Path(args.credentials_file))
+            print(f"Using sensor credentials for {email} from the credentials file (password hidden).")
+        except RuntimeError as exc:
+            print(f"Cannot load the credentials file: {exc}", file=sys.stderr)
             return 2
     else:
         email = input("SentinelAI login email: ").strip()

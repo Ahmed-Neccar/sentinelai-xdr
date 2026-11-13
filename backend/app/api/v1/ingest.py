@@ -28,11 +28,14 @@ from app.models import (
     DataSource,
     IngestionJob,
     ResponseSimulation,
+    Role,
     SecurityEvent,
     SensorRegistration,
     User,
+    UserRole,
 )
 from app.response import ip_block
+from app.response.enrollment import new_sensor_login
 from app.response.notify import notify_block_event
 from app.schemas.common import Page, TokenUser
 from app.workers.dispatch import enqueue_ingestion
@@ -638,6 +641,55 @@ def list_registered_sensors(db: DbDep, _: AdminUser) -> list[dict]:
         }
         for registration, email, source in rows
     ]
+
+
+class SensorEnrollmentIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=1, max_length=80)
+
+
+@router.post("/ingest/live/sensors/enrollment", status_code=201)
+def create_sensor_enrollment(
+    payload: SensorEnrollmentIn, db: DbDep, actor: AdminUser, request: Request
+) -> dict:
+    """Create the dedicated account a new sensor computer will sign in with.
+
+    The password is generated here and returned exactly once; only its hash is
+    stored. The administrator saves it as a credentials file next to the sensor
+    package, so nobody has to invent or type a sensor password. The account
+    becomes bound to the first sensor that enrolls with it, as before.
+    """
+    role = db.scalar(select(Role).where(Role.name == INGESTION))
+    if role is None:
+        raise AppError(500, "role_missing", "The sensor role is not provisioned")
+    email, password = new_sensor_login(payload.name)
+    user = User(
+        organization_id=actor.organization_id,
+        email=email,
+        hashed_password=hash_password(password),
+        full_name=f"Sensor: {payload.name.strip()[:80]}",
+        is_active=True,
+    )
+    db.add(user)
+    db.flush()
+    db.add(UserRole(organization_id=actor.organization_id, user_id=user.id, role_id=role.id))
+    write_audit(
+        db,
+        actor_id=actor.id,
+        action="sensor.enrollment.created",
+        target_type="user",
+        target_id=str(user.id),
+        ip_address=client_ip(request),
+        details={"email": email},
+    )
+    db.commit()
+    return {
+        "email": email,
+        "password": password,
+        "name": payload.name.strip(),
+        "note": "Shown once. Save it as sensor-credentials.json next to the sensor package.",
+    }
 
 
 @router.post("/ingest/live/sensors/{sensor_id}/revoke")
