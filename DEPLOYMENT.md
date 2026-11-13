@@ -90,6 +90,20 @@ Setting `SENTINEL_ENV=production` makes the services refuse to start unless:
 
 Production mode also disables the interactive API documentation page. It does not add TLS, change which ports are published, or enable alerting.
 
+### Switching an existing installation to production mode
+
+An installation that was started in development mode (weak `SECRET_KEY`, the Compose default database passwords) can be switched in place:
+
+```text
+powershell -ExecutionPolicy Bypass -File .\scripts\switch_to_production.ps1
+```
+
+It takes a database backup, keeps a copy of the current `.env` under `.data\`, generates a new signing key, MFA key and three database passwords (written to `.env`, never displayed), changes the database superuser password, sets `SENTINEL_ENV=production` and HTTPS-only `CORS_ORIGINS`, rebuilds and restarts every service, and puts the previous configuration back if the stack does not become healthy. An existing `CLOUD_CONNECTOR_ENCRYPTION_KEY` is kept, because a new one would make stored connector credentials unreadable; the script stops if none is set.
+
+Afterwards everyone must sign in again, sensors must be restarted, the API schema and documentation are no longer served, and the session cookie is marked Secure. Refresh the encrypted `.env` backup, and delete the kept copy of the old `.env` once satisfied: it holds the old secrets.
+
+Rehearse first. `scripts\rehearse_production.ps1 -FromDevelopment` builds a separate, throwaway stack shaped like an unhardened installation, adds data, runs the switch against it and checks that the data survived; without the switch it checks production mode on a fresh stack. Neither touches the live stack or `.env`.
+
 ## 5. Network exposure and TLS
 
 **The stack serves plain HTTP on loopback and includes no TLS termination.** To let other machines reach it you must add a reverse proxy on the host, and that is your responsibility to configure and test:

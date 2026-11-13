@@ -128,13 +128,40 @@ class ApiClient:
         # `verify` is True (the system's trusted authorities) or the path of
         # the one certificate this sensor accepts for its server.
         self.session = httpx.Client(timeout=10.0, follow_redirects=False, verify=verify)
-        response = self.session.post(
-            f"{self.base_url}/api/v1/auth/login",
-            json={"email": email, "password": password},
-        )
+        # Kept in memory for the life of the process so the sensor can sign in
+        # again when its session cannot be refreshed (see _renew_access).
+        self._email, self._password = email, password
+        response = self._login()
         if response.is_error:
             raise RuntimeError(f"API login failed ({response.status_code}): {safe_message(response)}")
         self.access_token = response.json()["access_token"]
+
+    def _login(self) -> httpx.Response:
+        return self.session.post(
+            f"{self.base_url}/api/v1/auth/login",
+            json={"email": self._email, "password": self._password},
+        )
+
+    def _renew_access(self) -> None:
+        """Get a new access token after a 401, by refresh or by signing in again.
+
+        Refresh relies on a cookie that a production server marks Secure, and an
+        HTTP client does not return such a cookie over plain http:// (the local
+        sensor talks to http://127.0.0.1). Signing in again covers that case.
+        A revoked or disabled sensor account fails both and stops the sensor.
+        """
+        refresh = self.session.post(f"{self.base_url}/api/v1/auth/refresh")
+        if refresh.is_success:
+            self.access_token = refresh.json()["access_token"]
+            return
+        if refresh.status_code not in (401, 403):
+            raise RuntimeError(f"Session refresh failed ({refresh.status_code})")
+        login = self._login()
+        if login.status_code in (401, 403):
+            raise SensorAuthorizationError("Sensor credentials are no longer authorized.")
+        if login.is_error:
+            raise RuntimeError(f"Sign-in after an expired session failed ({login.status_code})")
+        self.access_token = login.json()["access_token"]
 
     def post(self, path: str, payload: dict) -> dict:
         body = json.dumps(payload, separators=(",", ":"), sort_keys=True, ensure_ascii=False).encode("utf-8")
@@ -147,12 +174,7 @@ class ApiClient:
             headers=headers,
         )
         if response.status_code == 401:
-            refresh = self.session.post(f"{self.base_url}/api/v1/auth/refresh")
-            if refresh.is_error:
-                if refresh.status_code in (401, 403):
-                    raise SensorAuthorizationError("Sensor credentials are no longer authorized.")
-                raise RuntimeError(f"Session refresh failed ({refresh.status_code})")
-            self.access_token = refresh.json()["access_token"]
+            self._renew_access()
             headers["Authorization"] = f"Bearer {self.access_token}"
             if path.startswith("/api/v1/ingest/live/"):
                 headers.update(self._sensor_proof(path, body))

@@ -68,6 +68,24 @@ class Settings(BaseSettings):
             raise ValueError(f"SENTINEL_JOB_RUNNER must be one of {allowed}")
         return value
 
+    @field_validator(
+        "metrics_token",
+        "mfa_encryption_key",
+        "cloud_connector_encryption_key",
+        "oidc_issuer",
+        "oidc_client_id",
+        "oidc_client_secret",
+        "oidc_redirect_uri",
+        mode="before",
+    )
+    @classmethod
+    def empty_means_not_configured(cls, value: object) -> object:
+        # Compose passes an unset optional variable as an empty string. Without
+        # this, production refused to start when METRICS_TOKEN was simply absent.
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
+
     @field_validator("sentinel_env")
     @classmethod
     def validate_environment(cls, value: str) -> str:

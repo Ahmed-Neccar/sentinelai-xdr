@@ -88,3 +88,22 @@ def test_migration_component_requires_private_schema_owner_role(
             SENTINEL_COMPONENT="migration",
             MIGRATION_DATABASE_URL=migration_url,
         )
+
+
+def test_optional_settings_left_empty_by_compose_count_as_not_configured() -> None:
+    # Compose passes ${METRICS_TOKEN:-} and the OIDC variables as empty strings.
+    settings = production_settings(
+        METRICS_TOKEN="",
+        OIDC_ISSUER="",
+        OIDC_CLIENT_ID="",
+        OIDC_CLIENT_SECRET=" ",  # noqa: S106 - a blank value under test, not a secret
+        OIDC_REDIRECT_URI="",
+    )
+    assert settings.metrics_token is None and settings.oidc_issuer is None
+    # A token that is set must still be long enough, and empty required keys still fail.
+    with pytest.raises(ValidationError, match="METRICS_TOKEN"):
+        production_settings(METRICS_TOKEN="short")  # noqa: S106 - test value
+    with pytest.raises(ValidationError, match="MFA_ENCRYPTION_KEY"):
+        production_settings(MFA_ENCRYPTION_KEY="")
+    with pytest.raises(ValidationError, match="CLOUD_CONNECTOR_ENCRYPTION_KEY"):
+        production_settings(CLOUD_CONNECTOR_ENCRYPTION_KEY="")

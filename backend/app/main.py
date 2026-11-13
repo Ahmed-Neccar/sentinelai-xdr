@@ -40,6 +40,9 @@ app = FastAPI(
     lifespan=lifespan,
     docs_url="/docs" if settings.is_development else None,
     redoc_url=None,
+    # The schema lists every route and field; outside development it is not
+    # served either, not just the page that renders it.
+    openapi_url="/openapi.json" if settings.is_development else None,
 )
 
 app.add_middleware(
