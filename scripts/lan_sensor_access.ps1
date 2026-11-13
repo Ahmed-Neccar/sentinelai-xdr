@@ -93,9 +93,11 @@ if ($Action -eq "Enable") {
     $ranges = Get-BlockedRanges $SensorAddress
     New-NetFirewallRule -DisplayName $BlockRule -Direction Inbound -Action Block -Protocol TCP `
         -LocalPort $Port -RemoteAddress $ranges -Profile Any | Out-Null
-    # IPv6 clients are not part of this lab setup: block them all.
+    # IPv6 clients are not part of this lab setup: block them all. Windows
+    # rejects "::/0" as a prefix, so the unicast scopes are listed: global,
+    # unique-local and link-local.
     New-NetFirewallRule -DisplayName $BlockRule -Direction Inbound -Action Block -Protocol TCP `
-        -LocalPort $Port -RemoteAddress "::/0" -Profile Any | Out-Null
+        -LocalPort $Port -RemoteAddress @("2000::/3", "fc00::/7", "fe80::/10") -Profile Any | Out-Null
     if ($PackageDownload -and $SensorAddress.Count -gt 0) {
         New-NetFirewallRule -DisplayName $PackageBlockRule -Direction Inbound -Action Block -Protocol TCP `
             -LocalPort $PackagePort -RemoteAddress $ranges -Profile Any | Out-Null
