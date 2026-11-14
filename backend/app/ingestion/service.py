@@ -1,9 +1,9 @@
 from datetime import UTC, datetime
 from pathlib import Path
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -11,6 +11,28 @@ from app.db.session import set_organization_context
 from app.detection.run import run_detection_for_job
 from app.ingestion.parsers import ADAPTERS, RowError, load_records, validate_normalized_event
 from app.models import DataSource, IngestionJob, SecurityEvent
+
+INSERT_BATCH_ROWS = 500
+
+
+def insert_events(db: Session, rows: list[dict]) -> int:
+    """Insert event rows in one statement and return how many were new.
+
+    A row whose dedup key already exists for the organization is skipped by the database
+    (`ON CONFLICT DO NOTHING`), which also covers duplicates inside the batch itself. One
+    statement per few hundred rows replaces a lookup and a savepoint for every row.
+    """
+    if not rows:
+        return 0
+    statement = (
+        pg_insert(SecurityEvent)
+        .values(rows)
+        .on_conflict_do_nothing(
+            index_elements=[SecurityEvent.organization_id, SecurityEvent.dedup_key]
+        )
+        .returning(SecurityEvent.id)
+    )
+    return len(db.execute(statement).all())
 
 
 def safe_filename(name: str) -> str:
@@ -64,6 +86,7 @@ def process_ingestion_job(
         quarantined: list[dict] = []
         duplicates = 0
         detections = 0
+        pending: list[dict] = []
         for index, raw in enumerate(records, start=1):
             if not isinstance(raw, dict):
                 quarantined.append({"row": index, "error": "Row is not an object"})
@@ -73,43 +96,33 @@ def process_ingestion_job(
             except RowError as exc:
                 quarantined.append({"row": exc.row_number, "error": exc.message})
                 continue
-            dedup = normalized.get("dedup_key")
-            if dedup:
-                exists = db.scalar(select(SecurityEvent.id).where(SecurityEvent.dedup_key == dedup))
-                if exists:
-                    duplicates += 1
-                    continue
-            event = SecurityEvent(
-                event_time=normalized["event_time"],
-                data_source_id=job.data_source_id,
-                ingestion_job_id=job.id,
-                event_type=normalized["event_type"],
-                src_ip=normalized.get("src_ip"),
-                dst_ip=normalized.get("dst_ip"),
-                src_port=normalized.get("src_port"),
-                dst_port=normalized.get("dst_port"),
-                host_id=normalized.get("host_id"),
-                severity=normalized.get("severity") or "informational",
-                attributes=normalized.get("attributes") or {},
-                raw_payload=normalized.get("raw_payload") or {},
-                schema_version=normalized.get("schema_version") or 1,
-                dedup_key=normalized.get("dedup_key"),
+            pending.append(
+                {
+                    "id": uuid4(),
+                    "event_time": normalized["event_time"],
+                    "data_source_id": job.data_source_id,
+                    "ingestion_job_id": job.id,
+                    "event_type": normalized["event_type"],
+                    "src_ip": normalized.get("src_ip"),
+                    "dst_ip": normalized.get("dst_ip"),
+                    "src_port": normalized.get("src_port"),
+                    "dst_port": normalized.get("dst_port"),
+                    "host_id": normalized.get("host_id"),
+                    "severity": normalized.get("severity") or "informational",
+                    "attributes": normalized.get("attributes") or {},
+                    "raw_payload": normalized.get("raw_payload") or {},
+                    "schema_version": normalized.get("schema_version") or 1,
+                    "dedup_key": normalized.get("dedup_key"),
+                }
             )
-            try:
-                # A failed insert must only roll back this record. Rolling back
-                # the outer transaction would discard previously flushed events.
-                with db.begin_nested():
-                    db.add(event)
-                    db.flush()
-                accepted += 1
-            except IntegrityError as exc:
-                original = exc.orig
-                sqlstate = getattr(original, "sqlstate", None) or getattr(
-                    original, "pgcode", None
-                )
-                if sqlstate != "23505":
-                    raise
-                duplicates += 1
+            if len(pending) >= INSERT_BATCH_ROWS:
+                inserted = insert_events(db, pending)
+                accepted += inserted
+                duplicates += len(pending) - inserted
+                pending = []
+        inserted = insert_events(db, pending)
+        accepted += inserted
+        duplicates += len(pending) - inserted
         try:
             detections = run_detection_for_job(db, job.id)
         except Exception as exc:  # noqa: BLE001 — persist job failure, do not crash worker silently
