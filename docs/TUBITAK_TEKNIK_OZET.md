@@ -56,13 +56,13 @@ Simülasyon (ana senaryo, %10 saldıran, 20 tohum × 500 varlık; `research/resu
 
 - Sonuçların ana kısmı **sentetik veriden** gelir; neyin "normal" ve neyin "saldırı" olduğunu simülatörü yazanlar tanımlamıştır ve kurallar aynı kişilerce yazılmıştır (kurallar lehine yanlılık beklenir).
 - Kural eşikleri ve model ayarları bu veriye göre **seçilmemiştir**; ayrı bir doğrulama kümesinde eşik seçimi yapılmamıştır.
-- **İyi huylu ve saldırı etiketli gerçek bir veri kümesiyle ölçüm yoktur.** Bir kamu veri kümesi denendi ve reddedildi: kopyada zaman damgası yalnızca dakika ve saniyeden oluşuyor ve satırlar karışık sıradaydı (pencereli kurallar anlamsız olurdu) ve yalnızca 27 kaynak adresi vardı.
+- **İyi huylu ve saldırı etiketli gerçek veriyle yalnızca ağ kuralları ölçüldü** (CIC-IDS2017 akış verisi, 2,8 milyon akış; `CICIDS2017.md`). Saldırgan adres sayısı çok az (10 / 17.002), güç düşüktür; yanlış alarmların büyük kısmı akış yönü yapaylığıdır (dıştan içe iyi huylu akışların %89,6'sında hedef port geçici port). Oturum açma, süreç ve bulut kuralları gerçek etiketli veriyle ölçülmedi. Daha önce denenen bir kopya (zaman damgası yalnızca dakika:saniye, satırlar karışık) reddedildi.
 - Makine öğrenmesi bileşeni (Isolation Forest, altı özellik) **zayıf** çıktı ve projenin ana katkısı değildir. Gözetimli bir model denenmemiştir.
 - Tespit yalnızca bu sensörün topladığı veri kaynaklarına bağlıdır (Güvenlik günlüğü; Sysmon ve Sistem günlüğü okunmaz).
 
 ## 7. Önerilen iş planı (taslak; başvuru sahibi karar verir)
 
-1. İyi huylu ve saldırı etiketli, tam zaman damgalı bir kamu veri kümesi seçmek; `research/convert_flows_csv.py` ile dönüştürüp aynı protokolle ölçmek.
+1. Akış yönünü doğru ele alan (ayrı bir doğrulama kümesinde seçilmiş) bir ön işlemle CIC-IDS2017'yi yeniden ölçmek; oturum açma ve uç nokta kuralları için etiketli günlük veri kümeleri aramak.
 2. Eşikleri ayrı bir doğrulama kümesinde seçmek; sonucu görmemiş bir sınama kümesinde bildirmek.
 3. Gözetimli bir modeli (ör. ağaç tabanlı) etiketli veride eğitip kural ve eşikle karşılaştırmak.
 4. Sensörde Sistem günlüğü 7045 ve Sysmon okumasını eklemek ve etkisini aynı protokolle ölçmek.
@@ -74,6 +74,6 @@ Simülasyon (ana senaryo, %10 saldıran, 20 tohum × 500 varlık; `research/resu
 |---|---|
 | "Yapay zekâ ile tehdit tespiti" | Ana tespit kurallardır. Makine öğrenmesi bileşeni ölçüldü ve zayıf çıktı; bunu açıkça yazın. |
 | "Yüksek doğruluk" | Yok. Simülasyonda kurallar F1 %50,7; yanlış pozitif oranı %13,4. Doğruluk iddiasında bulunmayın. |
-| "Gerçek veriyle doğrulandı" | Kısmen: 8 gerçek saldırı kaydında duyarlılık (5/8). Yanlış alarm gerçek veride ölçülmedi. |
+| "Gerçek veriyle doğrulandı" | Kısmen: 8 gerçek saldırı kaydında duyarlılık (5/8); CIC-IDS2017'de yalnızca ağ kuralları ölçüldü (yanlış pozitif oranı %4,6, büyük kısmı akış yönü yapaylığı, 10 saldırgan adres). |
 | "Üretime hazır" | Hayır. Laboratuvar prototipi. |
 | "Özgün katkı" | Savunulabilir olan: kendi tespit hattını zor durumlarla, güven aralıklarıyla ve açık sınırlılıklarla ölçen tekrarlanabilir çerçeve ve onun bulguları (ör. yavaş saldırı boşluğu). |

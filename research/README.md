@@ -9,6 +9,7 @@ Sonuç raporları (Türkçe):
 - [`results/RAPOR.md`](results/RAPOR.md): yöntem karşılaştırması, simülasyon üzerinde, tablolar ve grafikler.
 - [`results/GERCEK_VERI.md`](results/GERCEK_VERI.md): halka açık gerçek saldırı kayıtlarında kural denemesi (yalnızca duyarlılık).
 - [`results/ADAY_KURALLAR.md`](results/ADAY_KURALLAR.md): yavaş saldırılar için üç aday kural, ayrı tohumlarda (`run_candidates.py`).
+- [`results/CICIDS2017.md`](results/CICIDS2017.md): etiketli gerçek akış verisinde (CIC-IDS2017) ağ kuralları (`run_cicids_parquet.py`; pyarrow gerektirir).
 
 ## Araştırma sorusu
 
@@ -37,7 +38,7 @@ eşiklerin altında kalan yavaş saldırılar. **Zor durumların payı** en öne
 Akış (flow) tabanlı etiketli CSV dosyaları (ör. CICIDS2017) için `convert_flows_csv.py` bu biçime çevirir; **tam tarih ve saat içeren** bir zaman sütunu şarttır
 (dakika ve saniyeden ibaret, satırları karışık bir kopya denendi ve reddedildi). Çeviri kuralları ve etiketleme sorumluluğu veri kümesinin belgelerindedir.
 
-Bu depoda **iyi huylu ve saldırı etiketli gerçek bir veri kümesiyle ölçüm yapılmamıştır**.
+Bu depoda **oturum açma, süreç ve bulut kuralları için iyi huylu ve saldırı etiketli gerçek veriyle ölçüm yoktur**; ağ kuralları CIC-IDS2017 akış verisinde ölçülmüştür (`results/CICIDS2017.md`).
 
 **Gerçek saldırı kayıtları (yalnızca duyarlılık):** `fetch_otrf.py`, OTRF Security-Datasets deposundan sekiz halka açık Windows saldırı kaydını indirir
 (toplam yaklaşık 4,5 MB; yalnızca veri olarak okunur, çalıştırılmaz, SHA-256 doğrulanır). `run_otrf.py`, bu kayıtlardan yalnızca SentinelAI sensörünün topladığı

@@ -366,3 +366,17 @@ def test_flow_converter_handles_decimal_addresses_and_odd_time_formats() -> None
 
     with pytest.raises(ValueError):
         convert_flows_csv.parse_time("53:44.4")  # minutes and seconds only: not a usable timestamp
+
+
+def test_cicids_timestamps_are_parsed_day_first_with_the_afternoon_fixed() -> None:
+    import run_cicids_parquet as cic
+
+    morning = cic.parse("03/07/2017 08:55:58")
+    assert datetime.fromtimestamp(morning, tz=UTC) == datetime(2017, 7, 3, 8, 55, 58, tzinfo=UTC)
+    # no zero padding, no seconds, afternoon on a 12-hour clock without AM/PM
+    afternoon = datetime.fromtimestamp(cic.parse("6/7/2017 3:21"), tz=UTC)
+    assert (afternoon.day, afternoon.month, afternoon.hour, afternoon.minute) == (6, 7, 15, 21)
+    assert cic.parse("6/7/2017 12:05:09") is not None
+    assert cic.parse("53:44.4") is None and cic.parse("not a time") is None
+    assert cic.parse("31/02/2017 10:00:00") is None  # impossible date
+    assert cic.parse("3/7/2017 9:00") < cic.parse("3/7/2017 3:00")  # 09:00 comes before 15:00

@@ -297,8 +297,8 @@ def markdown(main: dict, sweep: dict, sensitivity: list[dict], generated: str, t
     add("- **Parametreler ayarlanmadı.** Kural eşikleri ve Isolation Forest ayarları ne bu veriye göre seçildi ne de optimize edildi; bu nedenle sonuçlar bir üst sınır değildir.")
     add("- **Bulut ve uç nokta olayları** Isolation Forest ve basit eşik için görünmezdir (bu özellikler yalnızca oturum açma ve ağ sayımlarını kullanır). Bu, yöntemlerin eşit koşulda karşılaştırıldığı anlamına gelmez; "
         "kurallar daha fazla veri türünü görür.")
-    add("- **Etiketli gerçek veri yok.** İyi huylu ve saldırı etiketli bir gerçek veri kümesiyle ölçüm yapılmadı; kod `--dataset` ile bunu alacak biçimde hazırdır. "
-        "Yalnızca saldırı içeren sekiz halka açık Windows kaydında kuralların duyarlılığı ayrıca denendi (GERCEK_VERI.md); orada yanlış alarm ölçülemez.")
+    add("- **Bu rapordaki sonuçlar sentetiktir.** Etiketli gerçek akış verisinde yalnızca ağ kuralları ayrıca ölçüldü (CICIDS2017.md; saldırgan adres çok az, yanlış alarmların büyük kısmı akış yönü yapaylığı); "
+        "oturum açma, süreç ve bulut kuralları için etiketli gerçek veri yoktur. Yalnızca saldırı içeren sekiz halka açık Windows kaydında duyarlılık denendi (GERCEK_VERI.md).")
     add("- **Tek koşullu dönem:** İki saatlik ufuk ve sabit pencere hizalaması; pencere sınırını aşan yavaş saldırılar bu nedenle daha da zor yakalanır.")
     return "\n".join(lines) + "\n"
 
