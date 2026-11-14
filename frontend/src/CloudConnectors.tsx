@@ -158,9 +158,9 @@ export default function CloudConnectors({
         <div className="preference-grid">
           <label>{t('Source name')}<input required maxLength={200} value={name} onChange={event => setName(event.target.value)} /></label>
           <label>{t('Provider')}<select value={provider} onChange={event => changeProvider(event.target.value)}>
-            <option value="aws_cloudtrail">AWS CloudTrail</option>
-            <option value="azure_activity">Azure Activity Log</option>
-            <option value="entra_signin">Microsoft Entra sign-ins</option>
+            <option value="aws_cloudtrail">{t('AWS CloudTrail')}</option>
+            <option value="azure_activity">{t('Azure Activity Log')}</option>
+            <option value="entra_signin">{t('Microsoft Entra sign-ins')}</option>
           </select></label>
           {configFields.map(([key, label]) => <label key={key}>{t(label)}<input required value={config[key] || ''} onChange={event => setConfig(current => ({ ...current, [key]: event.target.value }))} /></label>)}
           {secretFields.map(([key, label]) => <label key={key}>{t(label)}<input type="password" autoComplete="new-password" required={key !== 'session_token'} value={credentials[key] || ''} onChange={event => setCredentials(current => ({ ...current, [key]: event.target.value }))} /></label>)}

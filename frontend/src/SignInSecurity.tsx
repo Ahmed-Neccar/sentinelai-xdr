@@ -71,7 +71,7 @@ export default function SignInSecurity({
                   <td>{row.account ?? '-'}</td>
                   <td>{row.ip_address ?? '-'}</td>
                   <td>{row.attempts}</td>
-                  <td>{new Date(row.last_attempt).toLocaleString()}</td>
+                  <td>{new Date(row.last_attempt).toLocaleString(language === 'tr' ? 'tr-TR' : 'en-US')}</td>
                 </tr>
               ))}
             </tbody>

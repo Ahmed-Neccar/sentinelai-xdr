@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useState } from 'react'
-import { HeartPulse } from 'lucide-react'
 import { translate, type Language } from './i18n'
 
 type Health = {
@@ -46,17 +45,17 @@ export default function SystemHealth({
     data.connectors.filter((c) => c.enabled && !c.healthy).length +
     (data.notifications.failed_24h > 0 ? 1 : 0)
   return (
-    <section className="panel">
+    <section className="panel overview-health">
       <div className="panel-head">
         <div>
-          <h2><HeartPulse size={16} /> {t('System health')}</h2>
+          <h2>{t('System health')}</h2>
           <p>{problems ? `${problems} ${t('problems need attention')}` : t('Everything reports normally.')}</p>
         </div>
       </div>
       <div className="overview-list">
         <article className="overview-row">
           <span className={`overview-mark ${data.sensors.silent.length ? 'high' : 'low'}`} />
-          <div>
+          <div className="overview-row-copy">
             <b>{t('Sensors')}</b>
             <small>
               {data.sensors.online} {t('sensors reporting')}
@@ -67,7 +66,7 @@ export default function SystemHealth({
         {data.connectors.map((c) => (
           <article className="overview-row" key={c.name}>
             <span className={`overview-mark ${c.enabled && !c.healthy ? 'high' : 'low'}`} />
-            <div>
+            <div className="overview-row-copy">
               <b>{c.name}</b>
               <small>
                 {c.enabled ? (c.healthy ? t('Polling normally') : t('Failing')) : t('Paused')}
@@ -78,7 +77,7 @@ export default function SystemHealth({
         ))}
         <article className="overview-row">
           <span className={`overview-mark ${data.notifications.failed_24h ? 'high' : 'low'}`} />
-          <div>
+          <div className="overview-row-copy">
             <b>{t('Notifications')}</b>
             <small>
               {data.notifications.enabled_channels} {t('channels enabled')} · {data.notifications.pending}{' '}
