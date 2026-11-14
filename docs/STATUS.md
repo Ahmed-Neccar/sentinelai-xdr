@@ -454,3 +454,8 @@ Done on branch `feat/ops-hardening-batch`; the live stack was rebuilt from it (`
 
 - New scheduled task `check_system_health_task` (every 5 minutes) queues alerts for silent sensors and failing or stale cloud connectors through the existing notification outbox (kind `system`), one per problem, repeated at most every 6 hours. A database-backed test covers: a silent sensor and an erroring connector are reported, a healthy, a normally stopped and an abandoned sensor are not, repeats are held back, delivery strips the internal key, and an organization without a channel queues nothing. It found a mistake in its own timing assumption on the first run, which was fixed in the test.
 - Not exercised live: no real sensor was left silent and no real webhook received a health message. Whether it works end to end on the live stack is recorded below if checked.
+
+## Update — 2026-11-14 (read-only API, worker and scheduler containers)
+
+- `compose.yaml` now runs `backend`, `worker` and `celery-beat` with a read-only root filesystem and a memory-backed `/tmp`; the scheduler keeps its schedule file in `/tmp` (so it is forgotten at restart; the cron-style tasks simply wait for their next time). Rehearsed on the isolated production stack first (`rehearse_production.ps1`, all checks passed, including a sensor session across token expiry), then applied to the live stack: all three report `ReadonlyRootfs=true`, readiness is ok and no errors appeared in the logs at start.
+- Not covered by the rehearsal: the scheduler (it is not in that stack). Its first scheduled runs on the live stack are recorded in the next note if checked. The frontend and the HTTPS front were left as they were because their NGINX writes to several paths.

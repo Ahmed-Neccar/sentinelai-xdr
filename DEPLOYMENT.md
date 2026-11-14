@@ -208,7 +208,7 @@ Present:
 Not present:
 
 - A trusted TLS certificate, a web application firewall, or network-level rate limiting in front of the API (the lab HTTPS front uses a self-signed certificate).
-- Read-only container filesystems, CPU/memory limits, or image digests.
+- Read-only filesystems for the frontend and HTTPS front, CPU/memory limits, or image digests (the API, worker and scheduler containers do run read-only, with a memory-backed `/tmp`).
 - A password on Redis or TLS between containers (they share one private Compose network).
 - Encryption of the database volume or of local backup files; rely on disk encryption.
 - Secret management beyond a file; `.env` is readable by anyone who can read the project directory.

@@ -119,6 +119,10 @@ services:
       - no-new-privileges:true
     cap_drop:
       - ALL
+    # The image is not written to at run time; scratch space is memory-backed.
+    read_only: true
+    tmpfs:
+      - /tmp
     ports:
       - "${API_BIND_ADDRESS:-127.0.0.1:8001}:8000"
     depends_on:
@@ -167,6 +171,9 @@ services:
       - no-new-privileges:true
     cap_drop:
       - ALL
+    read_only: true
+    tmpfs:
+      - /tmp
     depends_on:
       postgres:
         condition: service_healthy
@@ -182,7 +189,7 @@ services:
 
   celery-beat:
     <<: *worker_service
-    command: ["celery", "-A", "app.workers.celery_app:celery_app", "beat", "--loglevel=INFO"]
+    command: ["celery", "-A", "app.workers.celery_app:celery_app", "beat", "--loglevel=INFO", "--schedule=/tmp/celerybeat-schedule"]
 
   frontend:
     build: ./frontend
