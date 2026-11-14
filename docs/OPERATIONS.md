@@ -175,9 +175,9 @@ The Windows sensor collects selected passive network metadata and opt-in Windows
 
 ## Local backup retention, backup failure alerts and certificate expiry
 
-- `scriptsackup.ps1` keeps the newest 14 local backup sets (`-KeepLast` changes it) and deletes older `db-*`, `app-data-*` and `manifest-*` files after a verified backup. Encrypted `.env` copies are never deleted. `scripts\prune_backups.ps1 -WhatIf` shows what would go. The off-site copies in S3 follow their own 30-day rule.
+- `scripts\backup.ps1` keeps the newest 14 local backup sets (`-KeepLast` changes it) and deletes older `db-*`, `app-data-*` and `manifest-*` files after a verified backup. Encrypted `.env` copies are never deleted. `scripts\prune_backups.ps1 -WhatIf` shows what would go. The off-site copies in S3 follow their own 30-day rule.
 - When `backup.ps1` or `offsite_backup.ps1` fails, `backups\LAST_BACKUP_FAILURE.txt` is written (the next success removes it). If `.env` contains `BACKUP_ALERT_WEBHOOK_URL=https://...` (a Slack-compatible incoming webhook; add it yourself), the same message is posted there. The message holds the script name, time and error text. A machine that is off or a Task Scheduler task that never ran cannot report anything.
-- The lab HTTPS certificate is valid for 90 days. `scripts\check_cert_expiry.ps1` reports the days left and `backup.ps1` runs it. When it expires, sensors on other computers stop connecting: run `scriptsemote_sensors.ps1 -Action Setup` and redistribute the sensor package.
+- The lab HTTPS certificate is valid for 90 days. `scripts\check_cert_expiry.ps1` reports the days left and `backup.ps1` runs it. When it expires, sensors on other computers stop connecting: run `scripts\remote_sensors.ps1 -Action Setup` and redistribute the sensor package.
 
 ## Failed sign-ins
 
@@ -185,7 +185,8 @@ The Audit page shows failed password and single sign-on attempts of the last 24 
 
 ## Starting the sensor at boot (untested)
 
-`install_sensor_autostart.ps1` starts the sensor controller when you sign in; the sensor itself still has to be started from the Sensors page. `install_sensor_boot_task.ps1 -Interface "<adapter>"` (elevated) instead registers a scheduled task that runs the sensor at boot as SYSTEM and restarts it; it takes the same switches as the Sensors page (`-AllowIpBlocks`, `-AllowIsolation`, ...). It is a scheduled task, not a Windows service. It has not been run on a real computer yet; check `sensoruntimeoot-sensor.log` after a restart. Do not run it together with a sensor started from the Sensors page. Remove it with `remove_sensor_boot_task.ps1`.
+`install_sensor_autostart.ps1` starts the sensor controller when you sign in; the sensor itself still has to be started from the Sensors page. `install_sensor_boot_task.ps1 -Interface "<adapter>"` (elevated) instead registers a scheduled task that runs the sensor at boot as SYSTEM and restarts it; it takes the same switches as the Sensors page (`-AllowIpBlocks`, `-AllowIsolation`, ...). It is a scheduled task, not a Windows service. It has not been run on a real computer yet; check `sensor\runtime\boot-sensor.log` after a restart. Do not run it together with a sensor started from the Sensors page. Remove it with `remove_sensor_boot_task.ps1`.
+
 ## System health alerts
 
 Every five minutes the scheduler checks each organization for two problems and sends a message through the same notification channels (all enabled channels, regardless of their minimum severity): a live sensor session that is still marked running but has not sent a heartbeat for 5 minutes (sessions silent for more than 24 hours are treated as abandoned and not reported), and an enabled cloud connector that is in the error state or has had no successful poll for 30 minutes. One message is queued per problem and repeated at most every 6 hours while it lasts. The title is generic; the sensor or connector name is in the summary, which only goes to channels with "Include the finding summary" on.
