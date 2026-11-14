@@ -11,10 +11,10 @@ SentinelAI XDR is a defensive, self-hosted security monitoring platform for a la
 | Collection | JSON/CSV, Zeek, and Suricata EVE file import; a Windows host sensor for passive TCP/UDP header metadata and opt-in Windows Security events; read-only polling of AWS CloudTrail, Azure Activity Log, and Microsoft Entra sign-ins |
 | Detection | Versioned built-in rules with evidence-linked findings; correlation into cases by shared source, host, account, or resource inside a time window |
 | Investigation | Cases with assignment, priority, notes, status history, and CSV export of events and detections |
-| Notification | Webhook, Slack-compatible, and Telegram channels for new findings above a chosen severity |
+| Notification | Webhook, Slack-compatible, and Telegram channels for new findings above a chosen severity, response approvals and outcomes, silent sensors and failing cloud connectors |
 | Access control | Roles (administrator, analyst, auditor, ingestion service), TOTP MFA, single-provider OIDC SSO, audit log |
 | Isolation | Organization-scoped data with PostgreSQL row-level security and a non-superuser runtime role |
-| Operations | Backup and restore scripts, encrypted off-site copy to S3, encrypted `.env` backup, retention cleanup, optional Prometheus metrics |
+| Operations | Backup and restore scripts with pruning and failure alerts, encrypted off-site copy to S3, encrypted `.env` backup, retention cleanup, a production-mode switch with rehearsal scripts, optional Prometheus metrics |
 
 What it is not: a full EDR, a whole-network monitor (an ordinary Wi-Fi adapter sees only its own host's traffic), or an automated response system. The optional Isolation Forest anomaly score is not deployed and is not recommended in its current form; see the [evaluation](docs/PERFORMANCE_AND_ML_EVALUATION.md).
 
@@ -88,6 +88,8 @@ Backups contain telemetry and must be protected. Details, scheduling, and the re
   python -m mypy app
   ```
 
+  Most tests need a migrated PostgreSQL database and are skipped without one. On Windows with Docker, `scripts\run_integration_tests.ps1` runs the whole suite as CI does against a throwaway database container and touches nothing else. CI also audits the locked dependencies (`.github/workflows/security.yml`).
+
 - **Dependencies:** container images and CI install from the hash-pinned `backend/requirements.lock`. After changing `backend/requirements.txt`, regenerate it as described in [DEPLOYMENT.md](DEPLOYMENT.md#6-dependencies-and-the-lock-file).
 - **Load test and ML evaluation:** `scripts/loadtest/run_load_test.ps1` starts a separate Compose project so synthetic data never reaches your normal database; `scripts/ml/evaluate_ml.py` evaluates the anomaly model offline.
 
@@ -123,9 +125,11 @@ Backups contain telemetry and must be protected. Details, scheduling, and the re
 
 ## Known limitations
 
-- No independent security review; tenant isolation is enforced by the application and PostgreSQL row-level security and has not been externally tested.
-- TLS termination is not included; see [DEPLOYMENT.md](DEPLOYMENT.md#5-network-exposure-and-tls).
-- Azure, Entra, and OIDC SSO have not been validated against real tenants. Two sensors enrolling and being revoked independently has not been tested.
-- Performance was measured once on a laptop with synthetic data. The API runs a single process, and text search and the host inventory slow down as stored events grow.
-- Notifications cover new detections only. Sensor gaps, connector failures, and failed backups do not alert anyone.
-- Recovery time has been measured for the data restore steps only, not for rebuilding a host.
+- No independent security review; tenant isolation is enforced by the application and PostgreSQL row-level security. It is covered by automated tests, including two organizations side by side through the API, but has not been externally tested.
+- TLS is the lab HTTPS front with a self-signed certificate, valid for 90 days and tied to one network address; there is no trusted certificate or real host name. See [DEPLOYMENT.md](DEPLOYMENT.md#5-network-exposure-and-tls).
+- The whole stack runs on one personal computer: no high availability, no separate database host, no support or release process.
+- Azure Activity, OIDC single sign-on (Microsoft Entra) and two independent sensors were exercised once each on the author's lab. Entra sign-in logs (they need a paid licence), a second real Windows computer as a remote sensor, and recovery on a second machine have not been tested.
+- Performance was measured on one laptop with synthetic data. The API runs one process by default (`API_WORKERS` is available but unused), the text search scans the organization's events, and detection re-reads the recent-event window for every job.
+- The sensor is not a full EDR and runs as a scheduled task or from a console, not as a signed, self-updating Windows service. Only Windows is supported.
+- Alerting covers detections, response workflow events, silent sensors and failing cloud connectors, plus a webhook for failed backups. It is not an on-call system: a stopped worker or scheduler cannot report itself.
+- Detection content is a small set of rules; none has been evaluated on real telemetry.
