@@ -94,8 +94,37 @@ def next_sensor_request_counter() -> int:
         return current
 
 
+def restrict_credentials_file(path: Path) -> bool:
+    """Best effort: leave the file readable only by the current Windows user and SYSTEM.
+
+    The panel hands the file over with the sensor's password in clear text. A download
+    folder normally lets every local user read it; this removes inherited access. It never
+    raises: a sensor must still start where icacls is unavailable (returns False then).
+    """
+    if platform.system() != "Windows":
+        return False
+    import os
+
+    user = os.environ.get("USERNAME", "")
+    if not user:
+        return False
+    domain = os.environ.get("USERDOMAIN", "")
+    account = f"{domain}\\{user}" if domain else user
+    try:
+        result = subprocess.run(
+            ["icacls", str(path), "/inheritance:r", "/grant:r", f"{account}:(F)", "*S-1-5-18:(F)"],
+            capture_output=True,
+            timeout=15,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return result.returncode == 0
+
+
 def credentials_from_file(path: Path) -> tuple[str, str]:
     """Read {"email": ..., "password": ...} written by the panel's enrollment form."""
+    restrict_credentials_file(path.expanduser())
     try:
         data = json.loads(path.expanduser().read_text(encoding="utf-8-sig"))
     except OSError as exc:

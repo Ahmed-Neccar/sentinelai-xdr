@@ -13,6 +13,8 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "backup_alert.ps1")
+trap { Send-BackupFailureAlert $_ "offsite_backup.ps1"; break }
 $ProjectRoot = Split-Path $PSScriptRoot -Parent
 $Python = Join-Path $ProjectRoot ".venv\Scripts\python.exe"
 $CredentialFile = Join-Path $env:USERPROFILE ".aws\sentinelai-backup-credentials"

@@ -1,8 +1,13 @@
 param(
-    [string]$BackupDirectory = (Join-Path (Split-Path $PSScriptRoot -Parent) "backups")
+    [string]$BackupDirectory = (Join-Path (Split-Path $PSScriptRoot -Parent) "backups"),
+    # Newest backup sets to keep on this computer; older ones are deleted after a verified backup.
+    [ValidateRange(3, 1000)]
+    [int]$KeepLast = 14
 )
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "backup_alert.ps1")
+trap { Send-BackupFailureAlert $_ "backup.ps1"; break }
 $ProjectRoot = Split-Path $PSScriptRoot -Parent
 $ResolvedBackupDirectory = [System.IO.Path]::GetFullPath($BackupDirectory)
 New-Item -ItemType Directory -Path $ResolvedBackupDirectory -Force | Out-Null
@@ -54,3 +59,17 @@ if (Test-Path -LiteralPath $EnvFile -PathType Leaf) {
         Write-Warning ".env changed after its last encrypted backup ($($EnvBackup.Name)). Run scripts\backup_env.ps1 again."
     }
 }
+
+Clear-BackupFailure
+
+# Keep the disk from filling: drop the oldest local sets (never the encrypted .env copies).
+try {
+    & (Join-Path $PSScriptRoot "prune_backups.ps1") -BackupDirectory $ResolvedBackupDirectory -KeepLast $KeepLast
+} catch {
+    Write-Warning "Old backups could not be pruned: $($_.Exception.Message)"
+}
+
+# The HTTPS certificate is self-signed and expires; sensors on other computers drop silently when it does.
+try {
+    & (Join-Path $PSScriptRoot "check_cert_expiry.ps1") | Out-Host
+} catch { }

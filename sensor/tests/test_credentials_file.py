@@ -37,3 +37,29 @@ def test_bad_files_are_rejected_without_echoing_their_content(tmp_path, content:
 def test_missing_file_is_reported(tmp_path) -> None:
     with pytest.raises(RuntimeError, match="cannot read"):
         credentials_from_file(tmp_path / "absent.json")
+
+
+def test_restricting_permissions_never_blocks_reading(tmp_path, monkeypatch) -> None:
+    import live_sensor
+
+    calls: list[list[str]] = []
+
+    def failing_run(cmd, **kwargs):
+        calls.append(cmd)
+        raise OSError("icacls missing")
+
+    monkeypatch.setattr(live_sensor.platform, "system", lambda: "Windows")
+    monkeypatch.setenv("USERNAME", "alice")
+    monkeypatch.setenv("USERDOMAIN", "PC")
+    monkeypatch.setattr(live_sensor.subprocess, "run", failing_run)
+    path = tmp_path / "sensor-credentials.json"
+    path.write_text(json.dumps({"email": "a@b", "password": "x"}), encoding="utf-8")
+    assert credentials_from_file(path) == ("a@b", "x")
+    assert calls and calls[0][0] == "icacls" and "/inheritance:r" in calls[0] and "PC\\alice:(F)" in calls[0]
+
+
+def test_restriction_is_skipped_off_windows(tmp_path, monkeypatch) -> None:
+    import live_sensor
+
+    monkeypatch.setattr(live_sensor.platform, "system", lambda: "Linux")
+    assert live_sensor.restrict_credentials_file(tmp_path / "x") is False
