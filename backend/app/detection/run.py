@@ -85,6 +85,30 @@ def load_detection_window(db: Session, job_id: UUID, lookback: datetime) -> list
     return [window_row_to_dict(row) for row in rows]
 
 
+class EventIndex:
+    """Events grouped by type, so each rule only walks the events it can match.
+
+    Every rule evaluator requires `match.event_type`; a rule without one gets all events.
+    The original order is kept, because it decides the order of evidence ids.
+    """
+
+    def __init__(self, events: list[dict]) -> None:
+        self.events = events
+        self._by_type: dict[str, list[tuple[int, dict]]] = {}
+        for position, event in enumerate(events):
+            self._by_type.setdefault(str(event.get("event_type")), []).append((position, event))
+
+    def for_spec(self, spec: dict) -> list[dict]:
+        wanted = (spec.get("match") or {}).get("event_type")
+        if isinstance(wanted, str):
+            return [event for _, event in self._by_type.get(wanted, [])]
+        if isinstance(wanted, list | tuple | set) and wanted:
+            chosen = [row for name in set(wanted) for row in self._by_type.get(name, [])]
+            chosen.sort(key=lambda row: row[0])
+            return [event for _, event in chosen]
+        return self.events
+
+
 def load_enabled_specs(db: Session) -> list[dict]:
     rules = db.scalars(select(DetectionRule).where(DetectionRule.enabled.is_(True))).all()
     specs = []
@@ -268,13 +292,15 @@ def run_detection_for_job(db: Session, job_id: UUID) -> int:
     lookback = datetime.now(UTC) - timedelta(hours=2)
     as_dicts = load_detection_window(db, job_id, lookback)
     created = 0
+    index = EventIndex(as_dicts)
     for spec in load_enabled_specs(db):
+        candidates = index.for_spec(spec)
         if spec.get("rule_id") == "port_scan_like" or spec.get("unique_field") == "dst_port":
-            findings = evaluate_unique_port_rule(spec, as_dicts)
+            findings = evaluate_unique_port_rule(spec, candidates)
         elif spec.get("rule_id") == "suspicious_login_pattern":
-            findings = evaluate_login_pattern(spec, as_dicts)
+            findings = evaluate_login_pattern(spec, candidates)
         else:
-            findings = evaluate_rule(spec, as_dicts)
+            findings = evaluate_rule(spec, candidates)
         for finding in findings:
             persisted = persist_finding(db, finding)
             if persisted:
