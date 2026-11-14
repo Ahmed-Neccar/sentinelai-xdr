@@ -112,8 +112,9 @@ def enqueue_response_notifications(db: Session, message: dict[str, Any]) -> int:
 
 
 def _message_for(db: Session, delivery: NotificationDelivery, channel: NotificationChannel) -> dict:
-    if delivery.kind == "response" and isinstance(delivery.payload, dict):
+    if delivery.kind in ("response", "system") and isinstance(delivery.payload, dict):
         message = dict(delivery.payload)
+        message.pop("health_key", None)
         if not channel.include_summary:
             # The summary names an address and a host; it leaves the
             # installation only for channels that opted in, as for findings.

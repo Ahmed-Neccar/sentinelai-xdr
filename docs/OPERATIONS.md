@@ -186,3 +186,8 @@ The Audit page shows failed password and single sign-on attempts of the last 24 
 ## Starting the sensor at boot (untested)
 
 `install_sensor_autostart.ps1` starts the sensor controller when you sign in; the sensor itself still has to be started from the Sensors page. `install_sensor_boot_task.ps1 -Interface "<adapter>"` (elevated) instead registers a scheduled task that runs the sensor at boot as SYSTEM and restarts it; it takes the same switches as the Sensors page (`-AllowIpBlocks`, `-AllowIsolation`, ...). It is a scheduled task, not a Windows service. It has not been run on a real computer yet; check `sensoruntimeoot-sensor.log` after a restart. Do not run it together with a sensor started from the Sensors page. Remove it with `remove_sensor_boot_task.ps1`.
+## System health alerts
+
+Every five minutes the scheduler checks each organization for two problems and sends a message through the same notification channels (all enabled channels, regardless of their minimum severity): a live sensor session that is still marked running but has not sent a heartbeat for 5 minutes (sessions silent for more than 24 hours are treated as abandoned and not reported), and an enabled cloud connector that is in the error state or has had no successful poll for 30 minutes. One message is queued per problem and repeated at most every 6 hours while it lasts. The title is generic; the sensor or connector name is in the summary, which only goes to channels with "Include the finding summary" on.
+
+Limits: a sensor that is stopped from the panel is not reported (that is a normal stop); a stopped worker or scheduler cannot report its own death, and failed backups, disk space and database health are not covered here (see the backup failure alert above).

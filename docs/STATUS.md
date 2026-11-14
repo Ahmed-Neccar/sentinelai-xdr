@@ -449,3 +449,8 @@ Done on branch `feat/ops-hardening-batch`; the live stack was rebuilt from it (`
 
 - Migration 014 adds trigram (`pg_trgm`) indexes on `security_events.event_type` and `host_id`, so `GET /events?q=` no longer scans every row. It was applied to the live database by a normal rebuild after a fresh backup (migration level is now 014). The migration skips the indexes instead of failing if the extension cannot be created; here both indexes exist.
 - Checked read-only on the live database (51,592 events): the planner answers the search query with a bitmap scan on both indexes, 0.95 ms. This is the plan and timing for one query on this data size, not a load test; the earlier 0.6 s (one user) and 3–4 s (32 clients) at 160,000 events have not been re-measured through the API.
+
+## Update — 2026-11-14 (system health alerts)
+
+- New scheduled task `check_system_health_task` (every 5 minutes) queues alerts for silent sensors and failing or stale cloud connectors through the existing notification outbox (kind `system`), one per problem, repeated at most every 6 hours. A database-backed test covers: a silent sensor and an erroring connector are reported, a healthy, a normally stopped and an abandoned sensor are not, repeats are held back, delivery strips the internal key, and an organization without a channel queues nothing. It found a mistake in its own timing assumption on the first run, which was fixed in the test.
+- Not exercised live: no real sensor was left silent and no real webhook received a health message. Whether it works end to end on the live stack is recorded below if checked.

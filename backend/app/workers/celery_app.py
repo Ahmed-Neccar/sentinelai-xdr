@@ -27,6 +27,11 @@ celery_app.conf.update(
             "schedule": crontab(minute="*/5"),
             "options": {"queue": "celery"},
         },
+        "check-system-health": {
+            "task": "app.workers.tasks.check_system_health_task",
+            "schedule": crontab(minute="*/5"),
+            "options": {"queue": "celery"},
+        },
         "deliver-alert-notifications": {
             "task": "app.workers.tasks.deliver_notifications_task",
             "schedule": 30.0,

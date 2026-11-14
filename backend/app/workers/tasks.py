@@ -247,6 +247,21 @@ def deliver_notifications_task() -> dict[str, int]:
     return totals
 
 
+@celery_app.task(name="app.workers.tasks.check_system_health_task")
+def check_system_health_task() -> dict[str, int]:
+    """Queue alerts for silent sensors and failing cloud connectors, per organization."""
+    from app.notifications.health import queue_health_alerts
+
+    with SessionLocal() as catalog_db:
+        organization_ids = list(catalog_db.scalars(select(Organization.id)))
+    reported = 0
+    for organization_id in organization_ids:
+        with SessionLocal() as db:
+            set_organization_context(db, organization_id)
+            reported += queue_health_alerts(db)
+    return {"problems_reported": reported, "organizations_checked": len(organization_ids)}
+
+
 @celery_app.task(name="app.workers.tasks.cleanup_expired_events_task")
 def cleanup_expired_events_task(batch_size: int = 1000) -> dict[str, int]:
     """Purge expired telemetry in bounded, tenant-scoped transactions.
