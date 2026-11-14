@@ -83,7 +83,9 @@ services:
 
   backend:
     build: ./backend
-    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    # API_WORKERS (default 1) starts that many API processes. Rate limits live in Redis, so they
+    # are shared; the /hosts cache and the metrics counters are kept per process.
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "${API_WORKERS:-1}"]
     environment:
       SENTINEL_ENV: ${SENTINEL_ENV:-development}
       SENTINEL_COMPONENT: api
@@ -203,6 +205,9 @@ services:
       - no-new-privileges:true
     cap_drop:
       - ALL
+    read_only: true
+    tmpfs:
+      - /tmp
 
   # Lab only: https://localhost:8443 with a self-signed certificate, needed to
   # test OIDC sign-in (the callback must be HTTPS). Create the certificate with
@@ -226,6 +231,9 @@ services:
       - no-new-privileges:true
     cap_drop:
       - ALL
+    read_only: true
+    tmpfs:
+      - /tmp
 
   backup:
     image: postgres:16-alpine

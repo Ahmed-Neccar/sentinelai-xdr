@@ -70,6 +70,7 @@ The first form is for passwords and `SECRET_KEY`. The second produces the 32-byt
 | `RETENTION_DAYS` | optional | Default event retention (90). Each organization can change it in Settings |
 | `ACCESS_TOKEN_MINUTES`, `REFRESH_TOKEN_HOURS` | optional | Session lifetimes (15 minutes, 8 hours) |
 | `API_BIND_ADDRESS`, `POSTGRES_BIND_ADDRESS` | optional | Host address and port for the two published services |
+| `API_WORKERS` | optional | Number of API processes (default 1). Login throttling is shared through Redis; the `/hosts` cache and metrics counters are per process. Rehearsed with 3 on the isolated production stack, not run on the live one |
 
 The database passwords are embedded in connection URLs by Compose; use URL-safe characters (the generator above does). `DATABASE_URL`, `MIGRATION_DATABASE_URL`, `REDIS_URL`, and `SENTINEL_JOB_RUNNER` in `.env.example` apply only when running the backend outside Compose.
 
@@ -208,7 +209,7 @@ Present:
 Not present:
 
 - A trusted TLS certificate, a web application firewall, or network-level rate limiting in front of the API (the lab HTTPS front uses a self-signed certificate).
-- Read-only filesystems for the frontend and HTTPS front, CPU/memory limits, or image digests (the API, worker and scheduler containers do run read-only, with a memory-backed `/tmp`).
+- CPU/memory limits or image digests. The API, worker, scheduler, frontend and HTTPS front containers run with a read-only root filesystem and a memory-backed `/tmp`.
 - A password on Redis or TLS between containers (they share one private Compose network).
 - Encryption of the database volume or of local backup files; rely on disk encryption.
 - Secret management beyond a file; `.env` is readable by anyone who can read the project directory.
