@@ -72,10 +72,13 @@ def test_a_spray_in_an_uploaded_file_becomes_a_finding_and_a_case(
     with tenant.session() as db:
         seed_rules(db)
         db.commit()
-    now = datetime.now(UTC)
+    # Keep every event inside one ten-minute detection window (the previous one), whatever the
+    # time of day, so the test cannot straddle a window boundary.
+    window_start = int(datetime.now(UTC).timestamp() // 600) * 600 - 600
+    base = datetime.fromtimestamp(window_start + 30, tz=UTC)
     rows = [
         {
-            "event_time": (now - timedelta(seconds=i)).isoformat(),
+            "event_time": (base + timedelta(seconds=i * 10)).isoformat(),
             "event_type": "auth.failure",
             "src_ip": "203.0.113.50",
             "username": f"person{i}",

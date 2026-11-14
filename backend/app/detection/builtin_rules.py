@@ -548,3 +548,111 @@ BUILTIN_RULES.append(
         ],
     }
 )
+
+
+def _process_rule(
+    rule_id: str,
+    title: str,
+    description: str,
+    severity: str,
+    match: dict,
+    tactic: str,
+    technique_id: str,
+    justification: str,
+) -> dict:
+    return {
+        "rule_id": rule_id,
+        "title": title,
+        "description": description,
+        "severity": severity,
+        "version": 1,
+        "window_seconds": 300,
+        "group_by": ["host_id"],
+        "threshold": 1,
+        "match": {
+            "event_type": "process.start",
+            "attributes.source_name": "windows.security",
+            **match,
+        },
+        "mitre": [
+            {"tactic": tactic, "technique_id": technique_id, "justification": justification}
+        ],
+    }
+
+
+_REVIEW = " Review the parent and child evidence and the host's role; this can be legitimate."
+
+BUILTIN_RULES.extend(
+    [
+        _process_rule(
+            f"wmi_spawns_{child.split('.')[0]}",
+            f"WMI started {child.split('.')[0].title()}",
+            f"Windows process-creation telemetry shows WmiPrvSE.exe starting {child}. "
+            "Remote or scripted WMI execution looks like this." + _REVIEW,
+            "medium",
+            {
+                "attributes.process_name": {"op": "contains", "value": child},
+                "attributes.parent_process_name": {"op": "contains", "value": "wmiprvse.exe"},
+            },
+            "Execution",
+            "T1047",
+            "Commands started by the WMI provider host can be remote execution through WMI.",
+        )
+        for child in ("powershell.exe", "cmd.exe")
+    ]
+    + [
+        _process_rule(
+            f"{host.split('.')[0]}_spawns_powershell",
+            f"{host.split('.')[0].title()} started PowerShell",
+            f"Windows process-creation telemetry shows {host} starting powershell.exe. "
+            "Script hosts launching a shell are a common first stage of malicious scripts."
+            + _REVIEW,
+            "medium",
+            {
+                "attributes.process_name": {"op": "contains", "value": "powershell.exe"},
+                "attributes.parent_process_name": {"op": "contains", "value": host},
+            },
+            "Execution",
+            "T1059",
+            "A script host starting a shell is worth reviewing, but is not inherently malicious.",
+        )
+        for host in ("wscript.exe", "cscript.exe", "mshta.exe")
+    ]
+    + [
+        _process_rule(
+            rule_id,
+            title,
+            f"Windows process-creation telemetry shows a program running from {place}, "
+            "a folder that ordinary users can write to and where downloaded or dropped "
+            "files often land." + _REVIEW,
+            severity,
+            {"attributes.process_name": {"op": "contains", "value": needle}},
+            "Execution",
+            "T1204",
+            "Programs run from user-writable folders are often user-launched downloads.",
+        )
+        for rule_id, title, place, needle, severity in (
+            (
+                "process_from_temp_folder",
+                "Program started from a temporary folder",
+                "a temporary folder",
+                "\\appdata\\local\\temp\\",
+                "medium",
+            ),
+            (
+                "process_from_downloads_folder",
+                "Program started from the Downloads folder",
+                "the Downloads folder",
+                "\\downloads\\",
+                "low",
+            ),
+            (
+                "process_from_public_folder",
+                "Program started from the Public folder",
+                "the shared Public folder",
+                "\\users\\public\\",
+                "medium",
+            ),
+        )
+    ]
+)
