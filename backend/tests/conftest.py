@@ -39,8 +39,11 @@ def fresh_auth_throttle():
     test client's address, so signing in from many tests would otherwise hit the 20-per-5-minutes
     limit and fail with 429.
     """
-    from app.core import auth_rate_limit
-
+    try:
+        from app.core import auth_rate_limit
+    except Exception:  # noqa: BLE001 - settings may be unavailable in a bare local run
+        yield
+        return
     auth_rate_limit._local.clear()
     yield
 
