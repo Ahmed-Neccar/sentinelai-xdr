@@ -40,6 +40,8 @@ The bootstrap administrator is created only when the database has no users. If t
 
 ### Useful commands
 
+`powershell -ExecutionPolicy Bypass -File scripts\status.ps1` shows the health of the whole installation on one screen.
+
 ```text
 docker compose ps
 docker compose logs -f backend worker
