@@ -106,7 +106,7 @@ Rehearse first. `scripts\rehearse_production.ps1 -FromDevelopment` builds a sepa
 
 ## 5. Network exposure and TLS
 
-**The stack serves plain HTTP on loopback and includes no TLS termination.** To let other machines reach it you must add a reverse proxy on the host, and that is your responsibility to configure and test:
+**The stack serves plain HTTP on loopback. The only TLS termination included is the lab HTTPS front (`--profile tls-lab`, self-signed certificate, see `docs/OPERATIONS.md`).** For real users you must add a reverse proxy with a trusted certificate on the host, and that is your responsibility to configure and test:
 
 1. Terminate TLS in a proxy you maintain (for example NGINX, Caddy, or Traefik) with a certificate for your host name, and forward to `http://127.0.0.1:8080`. The frontend container already proxies `/api` to the backend, so one upstream is enough.
 2. Set `CORS_ORIGINS` to the public HTTPS origin. If SSO is used, set `OIDC_REDIRECT_URI` to `https://<host>/api/v1/auth/oidc/callback` and register exactly that URI with the provider.
@@ -167,7 +167,7 @@ A complete recovery needs four things. Each has a different home.
 | Database | `scripts\backup.ps1` (custom-format dump with SHA-256 manifest) | `backups\`, and S3 with `scripts\offsite_backup.ps1` |
 | Uploaded files and model directory | Same run, as a tar archive | Same |
 | `.env` (encryption keys and passwords) | `scripts\backup_env.ps1`, passphrase-encrypted | `backups\env-<timestamp>.enc`, **local only** |
-| Source code and lock files | Git | A remote you configure; none is configured yet |
+| Source code and lock files | Git | The private GitHub remote |
 
 ### The `.env` backup
 
@@ -207,7 +207,7 @@ Present:
 
 Not present:
 
-- TLS, a web application firewall, or network-level rate limiting in front of the API.
+- A trusted TLS certificate, a web application firewall, or network-level rate limiting in front of the API (the lab HTTPS front uses a self-signed certificate).
 - Read-only container filesystems, CPU/memory limits, or image digests.
 - A password on Redis or TLS between containers (they share one private Compose network).
 - Encryption of the database volume or of local backup files; rely on disk encryption.
@@ -220,7 +220,7 @@ These are not done. Treat each as a blocker for real data.
 
 1. Independent security review, including the tenant isolation boundary.
 2. TLS termination and an access-restricted network path, tested.
-3. Source code stored off the machine, and CI running on it. No Git remote is configured.
+3. Source code is on a private GitHub repository with CI; keep the repository private (it holds infrastructure details) and confirm that after any change of ownership.
 4. A full recovery rehearsal on a second machine with measured recovery time, and an off-machine copy of the encrypted `.env`.
 5. Alerting for system health: failed backups, a stopped worker, sensor heartbeat gaps, connector failures, disk space. Notifications currently cover detections only.
 6. Capacity work: the detection window's memory use, a single API process, text search, and the host inventory (see `docs/PERFORMANCE_AND_ML_EVALUATION.md`).

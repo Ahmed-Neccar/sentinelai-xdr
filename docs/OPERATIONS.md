@@ -123,7 +123,7 @@ These follow the same rules as an enforced IP block (proposal, approval by a dif
 - Disabling an account does not sign out a session that is already open.
 - Names with non-ASCII letters are refused.
 
-Both the sensor and the removal script judge firewall commands by their exit code, not their text, because `netsh` messages are translated on a non-English Windows.
+While a host is isolated, the sensor shows a message box to whoever is at the computer (Turkish and English) and another when the isolation is lifted. It appears only in an interactive Windows session; whether it appears on a given machine has not been checked. Both the sensor and the removal script judge firewall commands by their exit code, not their text, because `netsh` messages are translated on a non-English Windows.
 
 ## Sensors on other computers (lab, private certificate)
 
@@ -145,7 +145,7 @@ For each computer to add:
 
 `-Action Status` shows the state, `RemoveComputer` withdraws a computer (revoke its sensor in the panel too), and `Disable` puts everything back on this computer only.
 
-Limits of this arrangement: the certificate is self-signed and tied to an address that DHCP can change (run Setup again and redistribute the package if it does); an allowed computer can open the panel's sign-in page as well as the sensor API; `sensor-credentials.json` holds the sensor's password in clear text on that computer, like `.env` does here; and the stack still runs in development mode. A real deployment needs a stable name, a certificate from a trusted authority and a separate server.
+Limits of this arrangement: the certificate is self-signed and tied to an address that DHCP can change (run Setup again and redistribute the package if it does); an allowed computer can open the panel's sign-in page as well as the sensor API; `sensor-credentials.json` holds the sensor's password in clear text on that computer, like `.env` does here; and, outside the lab, the stack should run in production mode (see `DEPLOYMENT.md`). A real deployment needs a stable name, a certificate from a trusted authority and a separate server.
 
 ## Metrics scrape
 
@@ -171,4 +171,18 @@ Use **Send test** after creating a channel and confirm the message arrives. This
 
 TOTP MFA and single-provider OIDC SSO are implemented. OIDC still requires validation against the operator's real identity provider, including account disablement and MFA policy. Read-only polling foundations exist for AWS CloudTrail, Azure Activity Log, and Microsoft Entra sign-ins. AWS CloudTrail polling and event visibility have been exercised in the local lab; Azure and Entra live polling still require separate test tenants and end-to-end validation. Provider access is read-only, but operators must verify the exact permissions, licensing, retention, and credential rotation for their accounts.
 
-The Windows sensor collects selected passive network metadata and opt-in Windows Security events. It is not full EDR, and an ordinary Wi-Fi adapter does not expose all traffic on a LAN. The XDR response workflow records human-approved simulations; it does not isolate hosts or disable accounts. Its one executed action, a sensor-enforced IP block, is described under "Enforced IP blocks" and has only been exercised in the local lab. ML scores and rule findings are investigation signals, not proof of compromise. A lab deployment and successful connector check do not establish commercial production readiness. Before production use, complete an isolated backup/restore rehearsal, off-host encrypted backup and recovery-key procedures, alert delivery/on-call coverage, workload and tenant-isolation validation, representative detection evaluation, and an independent security review.
+The Windows sensor collects selected passive network metadata and opt-in Windows Security events. It is not full EDR, and an ordinary Wi-Fi adapter does not expose all traffic on a LAN. The XDR response workflow records human-approved simulations, and three actions are executed by a sensor: an IP block, host isolation and a local account disable (see "Enforced IP blocks" and "Enforced host isolation and local account disable"). All three have been exercised only in the local lab, on one computer. ML scores and rule findings are investigation signals, not proof of compromise. A lab deployment and successful connector check do not establish commercial production readiness. Before production use, complete an isolated backup/restore rehearsal, off-host encrypted backup and recovery-key procedures, alert delivery/on-call coverage, workload and tenant-isolation validation, representative detection evaluation, and an independent security review.
+
+## Local backup retention, backup failure alerts and certificate expiry
+
+- `scriptsackup.ps1` keeps the newest 14 local backup sets (`-KeepLast` changes it) and deletes older `db-*`, `app-data-*` and `manifest-*` files after a verified backup. Encrypted `.env` copies are never deleted. `scripts\prune_backups.ps1 -WhatIf` shows what would go. The off-site copies in S3 follow their own 30-day rule.
+- When `backup.ps1` or `offsite_backup.ps1` fails, `backups\LAST_BACKUP_FAILURE.txt` is written (the next success removes it). If `.env` contains `BACKUP_ALERT_WEBHOOK_URL=https://...` (a Slack-compatible incoming webhook; add it yourself), the same message is posted there. The message holds the script name, time and error text. A machine that is off or a Task Scheduler task that never ran cannot report anything.
+- The lab HTTPS certificate is valid for 90 days. `scripts\check_cert_expiry.ps1` reports the days left and `backup.ps1` runs it. When it expires, sensors on other computers stop connecting: run `scriptsemote_sensors.ps1 -Action Setup` and redistribute the sensor package.
+
+## Failed sign-ins
+
+The Audit page shows failed password and single sign-on attempts of the last 24 hours (counts by kind, and the accounts and addresses with most attempts) to administrators and auditors. It reads the existing audit records (`auth.login_failed`, `auth.sso_failed`, `auth.sso_identity_mismatch`); behind the bundled HTTPS front the address is the client's only if the proxy forwards it.
+
+## Starting the sensor at boot (untested)
+
+`install_sensor_autostart.ps1` starts the sensor controller when you sign in; the sensor itself still has to be started from the Sensors page. `install_sensor_boot_task.ps1 -Interface "<adapter>"` (elevated) instead registers a scheduled task that runs the sensor at boot as SYSTEM and restarts it; it takes the same switches as the Sensors page (`-AllowIpBlocks`, `-AllowIsolation`, ...). It is a scheduled task, not a Windows service. It has not been run on a real computer yet; check `sensoruntimeoot-sensor.log` after a restart. Do not run it together with a sensor started from the Sensors page. Remove it with `remove_sensor_boot_task.ps1`.
