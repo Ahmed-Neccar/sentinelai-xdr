@@ -1,4 +1,4 @@
-fastapi==0.115.6
+fastapi==0.163.0
 uvicorn[standard]==0.34.0
 sqlalchemy==2.0.36
 alembic==1.14.0
@@ -6,9 +6,9 @@ psycopg[binary]==3.2.3
 pydantic==2.10.4
 pydantic-settings==2.7.1
 pwdlib[argon2]==0.2.1
-PyJWT==2.10.1
+PyJWT==2.15.1
 cryptography==50.0.2
-python-multipart==0.0.20
+python-multipart==0.0.33
 httpx==0.28.1
 boto3==1.43.118
 email-validator==2.2.0
@@ -17,9 +17,9 @@ celery==5.4.0
 kombu==5.6.2
 redis==5.2.1
 limits==3.14.1
-orjson==3.10.12
+orjson==3.13.0
 PyYAML==6.0.2
-pytest==8.3.4
+pytest==9.2.0
 pytest-cov==6.0.0
 ruff==0.8.6
 mypy==1.14.1
