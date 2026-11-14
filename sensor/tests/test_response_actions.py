@@ -381,3 +381,23 @@ def test_removal_does_not_depend_on_translated_firewall_messages(tmp_path) -> No
     assert state == "failed" and ACTION in guard.blocks  # still recorded, so it is retried
     windows.delete_fails = False
     assert guard.unblock(ACTION) == ("removed", "") and windows.rules == []
+
+
+def test_isolation_shows_a_notice_when_applied_and_when_lifted_and_a_failing_notice_changes_nothing(tmp_path) -> None:
+    windows = Windows()
+    guard, clock = enforcer(tmp_path, windows)
+    shown: list[tuple[str, str]] = []
+    guard._notify = lambda title, text: shown.append((title, text))
+    assert guard.isolate(ACTION, 30)[0] == "applied"
+    assert len(shown) == 1 and "30" in shown[0][1] and "yalitildi" in shown[0][1]
+    clock[0] += 30 * 60 + 1
+    assert guard.handle([]) == [(ACTION, "removed", "expired")]
+    assert len(shown) == 2 and "lifted" in shown[1][1]
+
+    def broken(title: str, text: str) -> None:
+        raise RuntimeError("no desktop")
+
+    guard._notify = broken
+    assert guard.isolate(OTHER, 5)[0] == "applied"
+    assert guard.unblock(OTHER) == ("removed", "")
+    assert windows.rules == []

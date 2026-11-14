@@ -29,6 +29,7 @@ commands receive validated values as separate arguments, never through a shell.
 
 from __future__ import annotations
 
+import base64
 import ipaddress
 import json
 import re
@@ -74,6 +75,48 @@ def server_allows_enforcement(server_url: str) -> bool:
         return ipaddress.ip_address(host).is_loopback
     except ValueError:
         return False
+
+
+NOTICE_ISOLATED = (
+    "Bu bilgisayar SentinelAI XDR tarafindan agdan yalitildi ({minutes} dakika). "
+    "Ag ve internet erisimi kesildi; sure dolunca otomatik acilir. Sorun icin BT yoneticinize basvurun. "
+    "- "
+    "This computer was isolated from the network by SentinelAI XDR for {minutes} minutes. "
+    "It reconnects automatically when the time is up. Contact your IT administrator."
+)
+NOTICE_LIFTED = (
+    "SentinelAI XDR yalitmayi kaldirdi; ag erisimi geri geliyor. - "
+    "SentinelAI XDR lifted the isolation; network access is returning."
+)
+
+
+def show_notice(title: str, text: str) -> None:
+    """Show a message box to whoever is at this computer. Never blocks, never raises.
+
+    It only appears in an interactive session (the sensor runs as a logged-in user's task).
+    The text is fixed in this module; the script travels as an encoded command so it
+    cannot be altered by quoting.
+    """
+    safe_title = title.replace("'", "")[:80]
+    safe_text = text.replace("'", "")[:600]
+    script = (
+        "Add-Type -AssemblyName System.Windows.Forms; "
+        f"$f = New-Object System.Windows.Forms.Form; $f.TopMost = $true; $f.ShowInTaskbar = $false; $f.Text = '{safe_title}'; "
+        "$f.WindowState = 'Minimized'; $f.Show(); "
+        f"[void][System.Windows.Forms.MessageBox]::Show($f, '{safe_text}', '{safe_title}', 'OK', 'Warning'); "
+        "$f.Close()"
+    )
+    encoded = base64.b64encode(script.encode("utf-16-le")).decode("ascii")
+    try:
+        subprocess.Popen(  # noqa: S603 - fixed program, fixed text, no shell
+            ["powershell.exe", "-NoProfile", "-WindowStyle", "Hidden", "-EncodedCommand", encoded],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+    except (OSError, ValueError):
+        pass
 
 
 def _run(command: list[str]) -> tuple[int, str]:
@@ -246,8 +289,12 @@ class BlockEnforcer:
         protected: Callable[[], set[Address]] | None = None,
         exemptions: Callable[[], list[ipaddress.IPv4Network]] | None = None,
         server_reachable: Callable[[], bool] | None = None,
+        notify: Callable[[str, str], None] | None = None,
     ) -> None:
         self.state_path = state_path
+        # Called with (title, text) when this computer is isolated or released, so the person
+        # at the keyboard can see what happened. Optional; failures never affect enforcement.
+        self._notify = notify
         self.allowed = frozenset(allowed)
         self.run = run
         self.clock = clock
@@ -387,7 +434,16 @@ class BlockEnforcer:
             self._delete_rules(name)
             self._forget(action_id)
             return "failed", "the server was not reachable under isolation; rolled back"
+        self._tell("SentinelAI XDR", NOTICE_ISOLATED.format(minutes=int(minutes)))
         return "applied", f"isolated for {minutes} minutes"
+
+    def _tell(self, title: str, text: str) -> None:
+        if self._notify is None:
+            return
+        try:
+            self._notify(title, text)
+        except Exception:  # noqa: BLE001 - a notice must never break enforcement
+            pass
 
     def release_isolation(self, reason: str) -> list[tuple[str, str, str]]:
         """Lift any isolation now, for example because the sensor is stopping."""
@@ -480,6 +536,8 @@ class BlockEnforcer:
             removed, detail = self._delete_rules(prefix + action_id)
             if not removed:
                 return "failed", detail
+            if kind == ISOLATE:
+                self._tell("SentinelAI XDR", NOTICE_LIFTED)
         self._forget(action_id)
         return "removed", ""
 

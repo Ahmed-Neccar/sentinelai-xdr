@@ -27,7 +27,7 @@ try:
 except ImportError as exc:
     raise SystemExit("Scapy is missing. Install sensor/requirements.txt and Npcap; see sensor/README.md.") from exc
 
-from response_actions import BlockEnforcer, server_allows_enforcement
+from response_actions import BlockEnforcer, server_allows_enforcement, show_notice
 from windows_security import WindowsSecurityLog
 
 SENSOR_VERSION = "0.4.0"
@@ -550,6 +550,7 @@ def main() -> int:
         args.server,
         allowed=allowed_actions,
         server_reachable=server_reachable,
+        notify=show_notice,
     )
     # An isolation must not outlive the sensor that manages it.
     for action_id, state, detail in enforcer.release_isolation("left by an earlier run"):
