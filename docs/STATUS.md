@@ -467,7 +467,7 @@ Done on branch `feat/ops-hardening-batch`; the live stack was rebuilt from it (`
 
 ## Update — 2026-11-14 (load test repeated after the performance changes)
 
-`scripts\loadtestun_load_test.ps1` (isolated stack, 8 files of 20,000 events, same harness as `docs/PERFORMANCE_AND_ML_EVALUATION.md`), run on this computer while the live stack was also running. The trigram indexes were present in that run but unused (see above), so they only added write cost; run again without them, ingestion may be somewhat faster.
+`scripts/loadtest/run_load_test.ps1` (isolated stack, 8 files of 20,000 events, same harness as `docs/PERFORMANCE_AND_ML_EVALUATION.md`), run on this computer while the live stack was also running. The trigram indexes were present in that run but unused (see above), so they only added write cost; run again without them, ingestion may be somewhat faster.
 
 - Ingestion per file: 1,591 events/s for the first file falling to about 670 events/s for the eighth (earlier record: 528 to 434). The decline is the detection step, which loads the recent-event window; it now dominates.
 - `/hosts` (cached): 99 requests/s at 8 clients with p95 121 ms and 93 requests/s at 32 clients with p95 525 ms (earlier: 17 and 19 requests/s, p95 832 ms and 2,405 ms).
