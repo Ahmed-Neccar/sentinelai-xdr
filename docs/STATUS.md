@@ -444,3 +444,8 @@ Done on branch `feat/ops-hardening-batch`; the live stack was rebuilt from it (`
 - **Sensor at boot.** `install_sensor_boot_task.ps1` / `remove_sensor_boot_task.ps1` register a scheduled task that runs the sensor as SYSTEM at boot. Parsed, never run, and it needs an elevated shell. It is a scheduled task, not a Windows service, and it cannot show the isolation notice.
 - **Checks run.** Backend suite as CI runs it (`run_integration_tests.ps1`, throwaway PostgreSQL): 178 tests passed, none skipped, including the new rule, hosts-cache and sign-in tests; Ruff and MyPy clean; 56 sensor tests; the panel builds. CI on GitHub for this batch had not run when this was written.
 - **Not done:** everything on the operator's own list, a second computer, Entra sign-in logs, a real Windows service, performance work beyond the cache, and a review of the new screens in a browser.
+
+## Update — 2026-11-14 (Events text search indexes)
+
+- Migration 014 adds trigram (`pg_trgm`) indexes on `security_events.event_type` and `host_id`, so `GET /events?q=` no longer scans every row. It was applied to the live database by a normal rebuild after a fresh backup (migration level is now 014). The migration skips the indexes instead of failing if the extension cannot be created; here both indexes exist.
+- Checked read-only on the live database (51,592 events): the planner answers the search query with a bitmap scan on both indexes, 0.95 ms. This is the plan and timing for one query on this data size, not a load test; the earlier 0.6 s (one user) and 3–4 s (32 clients) at 160,000 events have not been re-measured through the API.
