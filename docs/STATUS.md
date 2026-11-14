@@ -473,3 +473,8 @@ Done on branch `feat/ops-hardening-batch`; the live stack was rebuilt from it (`
 - `/hosts` (cached): 99 requests/s at 8 clients with p95 121 ms and 93 requests/s at 32 clients with p95 525 ms (earlier: 17 and 19 requests/s, p95 832 ms and 2,405 ms).
 - `/events` and `/detections` are close to the earlier figures (for example `/events` at 32 clients: 59 requests/s, p95 807 ms; earlier 75 and 615 ms, within the noise of a shared machine). `/events?q=` is unchanged (p50 610 ms for one client; 5.5 s at 32 clients).
 - One run each; no repeat to establish variance.
+
+## Update — 2026-11-14 (detection rules see only their event type)
+
+- Each rule evaluator now receives only the events whose type it can match (`EventIndex` in `app/detection/run.py`), instead of every event in the two-hour window. A test compares the findings of every built-in rule on 3,000 random events with and without the narrowing: identical.
+- No measurable gain: the load test with this change gave 1,113 events/s for the first file and 673 for the eighth, against 1,591 and 674 before; the first file differs by run-to-run noise on a shared machine. The late-file slowdown therefore does not come from rule matching; loading the window and the anomaly scoring were not profiled.
