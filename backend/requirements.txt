@@ -15,7 +15,7 @@ email-validator==2.2.0
 celery==5.4.0
 # Pinned: kombu 5.7.0 refuses redis-py < 6.1 and crash-loops the worker with redis==5.2.1.
 kombu==5.6.2
-redis==5.2.1
+redis==8.1.0
 limits==3.14.1
 orjson==3.13.0
 PyYAML==6.0.2
