@@ -1,4 +1,7 @@
+import threading
+import time
 from typing import Annotated
+from uuid import UUID
 
 from fastapi import APIRouter, Depends
 from sqlalchemy import func, select
@@ -14,9 +17,43 @@ router = APIRouter(prefix="/hosts", tags=["hosts"])
 Reader = Annotated[TokenUser, Depends(require_roles(*READ_EVENTS))]
 
 
+# The inventory aggregates the whole event table, and the panel asks again every five
+# seconds. Keeping the answer for a few seconds per organization removes most of that load
+# at the cost of data up to HOSTS_CACHE_SECONDS old. The cache is per API process.
+HOSTS_CACHE_SECONDS = 10.0
+_hosts_cache: dict[UUID, tuple[float, list[dict]]] = {}
+_hosts_cache_lock = threading.Lock()
+
+
+def _cached_hosts(organization_id: UUID, now: float | None = None) -> list[dict] | None:
+    current = time.monotonic() if now is None else now
+    with _hosts_cache_lock:
+        entry = _hosts_cache.get(organization_id)
+        if entry is not None and current - entry[0] < HOSTS_CACHE_SECONDS:
+            return entry[1]
+    return None
+
+
+def _store_hosts(organization_id: UUID, value: list[dict], now: float | None = None) -> None:
+    current = time.monotonic() if now is None else now
+    with _hosts_cache_lock:
+        if len(_hosts_cache) > 256:
+            _hosts_cache.clear()
+        _hosts_cache[organization_id] = (current, value)
+
+
 @router.get("")
-def list_hosts(db: DbDep, _: Reader) -> list[dict]:
+def list_hosts(db: DbDep, user: Reader) -> list[dict]:
     """Return a telemetry-derived host summary, not managed-agent health."""
+    cached = _cached_hosts(user.organization_id)
+    if cached is not None:
+        return cached
+    result = _build_hosts(db)
+    _store_hosts(user.organization_id, result)
+    return result
+
+
+def _build_hosts(db: DbDep) -> list[dict]:
     rows = db.execute(
         select(
             SecurityEvent.host_id,
