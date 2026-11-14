@@ -1,0 +1,51 @@
+name: Dependency audit
+
+# Fails when a locked dependency has a published advisory. Runs weekly as well, because a new
+# advisory can appear for a package that has not changed.
+on:
+  pull_request:
+    paths:
+      - 'backend/requirements*'
+      - 'sensor/requirements*'
+      - 'frontend/package*.json'
+      - '.github/workflows/security.yml'
+  push:
+    branches: [main, master]
+    paths:
+      - 'backend/requirements*'
+      - 'sensor/requirements*'
+      - 'frontend/package*.json'
+  schedule:
+    - cron: '17 5 * * 1'
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+      - name: Install the audit tool
+        run: python -m pip install pip-audit
+      - name: Audit the backend lock
+        run: pip-audit --requirement backend/requirements.lock --require-hashes --no-deps --progress-spinner off
+      - name: Audit the sensor lock
+        run: pip-audit --requirement sensor/requirements.lock --progress-spinner off
+
+  npm:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22'
+          package-manager-cache: false
+      - name: Audit production packages
+        run: npm audit --omit=dev
