@@ -113,6 +113,10 @@ const tr: Record<string, string> = {
   'Verify the linked event evidence and confirm the source is within your authorized lab scope. SentinelAI never blocks or isolates anything by itself; a real action needs a proposal, a second administrator, and a sensor that was started with that action allowed.':'Bağlı olay kanıtını doğrulayın ve kaynağın yetkili laboratuvar kapsamınızda olduğundan emin olun. SentinelAI kendiliğinden hiçbir şeyi engellemez veya yalıtmaz; gerçek eylem için öneri, ikinci bir yönetici ve o eyleme izin verilerek başlatılmış bir sensör gerekir.',
   'Azure Activity Log':'Azure etkinlik günlüğü',
   'Microsoft Entra sign-ins':'Microsoft Entra oturum açmaları',
+  'Test message delivered.':'Deneme mesajı iletildi.',
+  'Test message failed: ':'Deneme mesajı iletilemedi: ',
+  'No result after 2 minutes. Check that the worker is running.':'2 dakika içinde sonuç yok. Çalışan (worker) hizmetinin açık olduğunu kontrol edin.',
+  'Test message queued; waiting for the result…':'Deneme mesajı sıraya alındı; sonuç bekleniyor…',
 }
 
 export function translate(text: string, language: Language): string {

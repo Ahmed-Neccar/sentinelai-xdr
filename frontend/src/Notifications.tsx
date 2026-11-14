@@ -30,6 +30,9 @@ export default function Notifications({
   const [minSeverity, setMinSeverity] = useState('high')
   const [includeSummary, setIncludeSummary] = useState(false)
   const [busy, setBusy] = useState(false)
+  // Result of the last "Send test" per channel, read from the channel's own delivery status.
+  const [pendingTests, setPendingTests] = useState<Record<string, { since: number; success: string | null; error: string | null }>>({})
+  const [testResults, setTestResults] = useState<Record<string, string>>({})
   const canManage = user.roles.includes('administrator')
 
   const load = useCallback(async () => {
@@ -87,9 +90,35 @@ export default function Notifications({
     'Unable to update notification channel',
   )
   const test = (item: Row) => run(
-    () => apiRequest(`/notification-channels/${item.id}/test`, { method: 'POST' }),
+    async () => {
+      await apiRequest(`/notification-channels/${item.id}/test`, { method: 'POST' })
+      setTestResults(current => { const next = { ...current }; delete next[item.id]; return next })
+      setPendingTests(current => ({ ...current, [item.id]: { since: Date.now(), success: item.last_success_at ?? null, error: item.last_error ?? null } }))
+    },
     'Unable to queue test notification',
   )
+
+  // While a test is waiting, look again every 4 seconds; give up after 2 minutes.
+  useEffect(() => {
+    const ids = Object.keys(pendingTests)
+    if (!ids.length) return
+    const timer = window.setInterval(() => void load(), 4000)
+    return () => window.clearInterval(timer)
+  }, [pendingTests, load])
+  useEffect(() => {
+    for (const [id, waiting] of Object.entries(pendingTests)) {
+      const item = items.find(row => row.id === id)
+      if (!item) continue
+      let result = ''
+      if ((item.last_success_at ?? null) !== waiting.success) result = 'Test message delivered.'
+      else if (item.last_error && item.last_error !== waiting.error) result = 'Test message failed: ' + item.last_error
+      else if (Date.now() - waiting.since > 120000) result = 'No result after 2 minutes. Check that the worker is running.'
+      if (result) {
+        setTestResults(current => ({ ...current, [id]: result }))
+        setPendingTests(current => { const next = { ...current }; delete next[id]; return next })
+      }
+    }
+  }, [items, pendingTests])
   function remove(item: Row) {
     if (!window.confirm(t('Delete this channel? Its stored destination and delivery history will be erased.'))) return
     void run(
@@ -150,7 +179,7 @@ export default function Notifications({
         {items.length ? <div className="table-wrap"><table><thead><tr><th>{t('CHANNEL')}</th><th>{t('STATUS')}</th><th>{t('NOTIFIES FROM')}</th><th>{t('LAST SUCCESS')}</th><th>{t('DELIVERIES')}</th>{canManage && <th>{t('ACTIONS')}</th>}</tr></thead><tbody>
           {items.map(item => { const [cls, label] = state(item); return <tr key={item.id}>
             <td><b>{item.name}</b><small>{t(KIND_LABEL[item.kind] || item.kind)}</small><small>{t(item.include_summary ? 'Summary included' : 'Summary left out')}</small></td>
-            <td><span className={`status ${cls}`}>{t(label)}</span>{item.last_error && <small>{t(item.last_error)}</small>}</td>
+            <td><span className={`status ${cls}`}>{t(label)}</span>{item.last_error && <small>{t(item.last_error)}</small>}{pendingTests[item.id] && <small>{t('Test message queued; waiting for the result…')}</small>}{testResults[item.id] && <small><b>{testResults[item.id].startsWith('Test message failed: ') ? t('Test message failed: ') + testResults[item.id].slice(21) : t(testResults[item.id])}</b></small>}</td>
             <td>{canManage ? <select value={item.min_severity} disabled={busy} aria-label={t('Notify from severity')} onChange={event => void patch(item, { min_severity: event.target.value })}>
               {['low', 'medium', 'high', 'critical'].map(value => <option key={value} value={value}>{t(value)}</option>)}
             </select> : t(item.min_severity)}</td>
