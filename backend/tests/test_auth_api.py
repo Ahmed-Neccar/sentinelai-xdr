@@ -117,3 +117,37 @@ def test_repeated_failures_are_throttled(tenant) -> None:
     assert 429 in codes[12:]
     # The throttle is per account: the correct password is refused while it is active.
     assert _login(tenant, tenant.emails["auditor"], PASSWORD).status_code == 429
+
+
+def test_only_a_genuine_access_token_is_accepted_as_a_bearer_token(tenant) -> None:
+    import jwt as pyjwt
+    from app.core.config import settings
+    from app.core.security import ALGORITHM, create_refresh_token
+
+    client = tenant.client
+    login = _login(tenant, tenant.emails["analyst"], PASSWORD)
+    access = login.json()["access_token"]
+    claims = pyjwt.decode(access, settings.secret_key, algorithms=[ALGORITHM])
+
+    def me(token: str):
+        return client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {token}"})
+
+    assert me(access).status_code == 200
+    refresh, _ = create_refresh_token(
+        user_id=claims["sub"], organization_id=claims["org"], token_version=claims["tv"]
+    )
+    assert me(refresh).status_code == 401  # a refresh token is not an access token
+    forged = pyjwt.encode(claims, "x" * 40, algorithm=ALGORITHM)
+    assert me(forged).status_code == 401  # signed with another key
+    unsigned = pyjwt.encode(claims, "", algorithm="none")
+    assert me(unsigned).status_code == 401
+    expired = pyjwt.encode({**claims, "exp": 1}, settings.secret_key, algorithm=ALGORITHM)
+    expired_response = me(expired)
+    assert expired_response.status_code == 401
+    assert expired_response.json()["error"]["code"] == "token_expired"
+    other_org = pyjwt.encode(
+        {**claims, "org": "00000000-0000-0000-0000-000000000000"},
+        settings.secret_key,
+        algorithm=ALGORITHM,
+    )
+    assert me(other_org).status_code == 401
