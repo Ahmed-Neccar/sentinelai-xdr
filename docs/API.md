@@ -49,6 +49,9 @@ Interactive docs in Compose: `http://127.0.0.1:8001/docs` (OpenAPI). For a host-
 | POST | `/auth/refresh` | refresh cookie or body | rotates access token |
 | POST | `/auth/logout` | user | invalidates refresh family |
 | GET | `/auth/me` | user | current user + roles |
+| GET | `/auth/oidc/status` | none | whether single sign-on is configured, and the origin it uses |
+| GET | `/auth/oidc/start` | none | begin the OIDC authorization-code flow with PKCE |
+| GET | `/auth/oidc/callback` | provider redirect | finish sign-in; only accounts an administrator already created can sign in |
 | GET | `/auth/mfa/status` | user | enrollment and organization policy status |
 | POST | `/auth/mfa/enroll` | user | verify current password and begin TOTP setup |
 | POST | `/auth/mfa/enable` | user | verify TOTP, enable MFA, and return one-time recovery codes |
@@ -66,7 +69,7 @@ MFA uses TOTP authenticator apps. TOTP secrets are encrypted with `MFA_ENCRYPTIO
 |--------|------|------|
 | GET | `/users` | administrator |
 | POST | `/users` | administrator |
-| PATCH | `/users/{id}` | administrator |
+| PATCH | `/users/{id}` | administrator | Change name, roles, active flag or password; `unlink_sso` forgets the bound SSO identity. The last active administrator cannot be disabled or demoted |
 
 ### Data sources
 
@@ -87,6 +90,8 @@ MFA uses TOTP authenticator apps. TOTP secrets are encrypted with `MFA_ENCRYPTIO
 | POST | `/ingest/live/{id}/events` | admin, analyst, ingestion_service | Accept a batch of at most 100 normalized live records; ingestion-only users may write only to sessions they created |
 | POST | `/ingest/live/{id}/finish` | admin, analyst, ingestion_service | Finish a live sensor session; ingestion-only users may finish only sessions they created |
 | GET | `/ingest/live/sessions` | admin, analyst, ingestion_service | List recent sessions; ingestion-only users see only sessions they created |
+| POST | `/ingest/live/{id}/actions/{action_id}/result` | ingestion_service | A sensor reports that it applied, refused, failed or lifted an action (signed request) |
+| POST | `/ingest/live/sensors/enrollment` | administrator | Create a dedicated sensor account with a generated password, returned once |
 | GET | /ingest/live/sensors | administrator | List up to 500 registered sensor identities and health fields |
 | POST | /ingest/live/sensors/{sensor_id}/revoke | administrator | Revoke credential, invalidate tokens, and close server sessions; the host process exits after its next denied heartbeat |
 | POST | /ingest/live/sensors/{sensor_id}/rotate-credential | administrator | Set a new credential password; update host .env and restart its controller |
@@ -107,7 +112,7 @@ Live capture is supplied by the optional Windows sensor, not by the Docker conta
 | GET | `/events` | analyst+ / auditor |
 | GET | `/events/{id}` | analyst+ / auditor |
 
-Filters: `event_type`, `src_ip`, `dst_ip`, `host_id`, `severity`, `from`, `to`, `q`.
+Filters: `event_type`, `src_ip`, `dst_ip` (an invalid address returns 400 `invalid_ip`), `host_id`, `severity`, `from`, `to` (ISO-8601; URL-encode the `+` of an offset), `q` (substring of event type or host id; slow on large tables).
 
 ### Hosts (telemetry-derived)
 
@@ -144,15 +149,42 @@ The UI's “recent data” indicator is computed from the last event timestamp; 
 | GET | `/cases/{id}` | analyst+ / auditor |
 | PATCH | `/cases/{id}` | analyst, administrator |
 | POST | `/cases/{id}/comments` | analyst, administrator |
-| POST | `/cases/{id}/responses` | analyst, administrator | Propose an allowlisted simulation record; no external action runs |
-| POST | `/cases/{id}/responses/{response_id}/approve` | administrator | Approve within 7 days; requester cannot self-approve |
+| GET | `/cases/pending-approvals` | analyst+ / auditor | Response proposals waiting for approval |
+| POST | `/cases/{id}/responses` | analyst, administrator | Propose a response. `simulate_*` types are audit records only. `block_source_ip`, `isolate_host` and `disable_local_account` are executed by the chosen sensor after approval |
+| POST | `/cases/{id}/responses/{response_id}/approve` | administrator | Approve (simulations within 7 days, executed actions within 24 hours); the requester cannot approve their own |
 | POST | `/cases/{id}/responses/{response_id}/reject?note=...` | administrator | Reject a proposal with an optional note; requester cannot self-review |
 | POST | `/cases/{id}/responses/{response_id}/simulate` | administrator | Record a simulation after approval; no endpoint is contacted |
+| POST | `/cases/{id}/responses/{response_id}/unblock` | administrator | Lift an executed action early (any administrator, including the requester) |
 | GET | `/cases/{id}/history` | analyst+ / auditor |
 
 Case updates accept `status`, `severity`, `priority` (`p1`–`p4`), and `assigned_to`. Assignment may be set to an active analyst/administrator UUID or cleared with `null`; invalid priorities, severities, and inactive/non-analyst assignees are rejected. Case mutations are audited.
 
-Auditor is read-only. Response simulations are audit records only; the system does not isolate devices, disable accounts, block IPs, or contact an external service.
+Auditor is read-only. Simulations are audit records only. The three executed actions are applied by an enrolled sensor to its own computer, for a limited time, after a different administrator approves; the server never contacts a host (see `docs/OPERATIONS.md` and `docs/THREAT_MODEL.md`).
+
+### Notification channels
+
+| Method | Path | Auth |
+|--------|------|------|
+| GET | `/notification-channels` | administrator, analyst |
+| POST | `/notification-channels` | administrator |
+| PATCH | `/notification-channels/{id}` | administrator |
+| DELETE | `/notification-channels/{id}` | administrator |
+| POST | `/notification-channels/{id}/test` | administrator |
+
+Kinds: `webhook`, `slack`, `telegram`. The destination is HTTPS only, stored encrypted and never returned. Messages cover new findings above the channel's minimum severity, response workflow events, silent sensors and failing cloud connectors. Delivery is asynchronous (about 30 seconds) with retries.
+
+### Cloud connectors
+
+| Method | Path | Auth |
+|--------|------|------|
+| GET | `/cloud-connectors` | administrator, analyst |
+| POST | `/cloud-connectors` | administrator |
+| PUT | `/cloud-connectors/{id}` | administrator (replace configuration and credentials; refused while a poll is running) |
+| PATCH | `/cloud-connectors/{id}` | administrator (enable or pause) |
+| DELETE | `/cloud-connectors/{id}` | administrator (revoke: erases the stored credentials) |
+| POST | `/cloud-connectors/{id}/poll` | administrator (queue a poll now) |
+
+Providers: `aws_cloudtrail`, `azure_activity`, `entra_signin`. Credentials are encrypted and never returned; responses only say whether they are configured. Polling is read-only.
 
 ### Models (evaluation artifacts)
 
@@ -171,6 +203,7 @@ Training is **CLI only** (`python -m app.detection.ml.train`). Not exposed as a 
 | GET | `/dashboard/summary` | analyst+ / auditor |
 | GET | `/reports/summary` | analyst+ / auditor |
 | GET | `/audit-logs` | administrator, auditor |
+| GET | `/audit-logs/sign-in-security` | administrator, auditor | Failed password and SSO sign-ins in the last `hours` (default 24): counts by kind and the accounts and addresses with most attempts |
 | GET | `/settings` | authenticated (safe subset) |
 | PATCH | `/settings` | administrator |
 

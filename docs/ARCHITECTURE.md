@@ -20,7 +20,7 @@ flowchart LR
     RD[(Redis broker)]
     FS[Job file store]
   end
-  UI -->|HTTP loopback| API
+  UI -->|HTTP, internal network| API
   API --> PG
   API -->|enqueue job| RD
   W --> RD

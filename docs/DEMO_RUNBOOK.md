@@ -41,4 +41,4 @@ For a predictable UI walkthrough, go to **Ingestion** and upload `data/samples/a
 
 > “SentinelAI XDR is a local defensive monitoring prototype. A Windows sensor passively forwards connection headers and, when enabled, selected Windows Security events. The application normalizes those records, evaluates transparent lab rules, and lets an analyst review evidence and cases. It monitors only what the selected adapter and enabled Windows audit sources expose. A rule match is a lead for investigation, not proof of compromise.”
 
-Automated isolation, blocking, full endpoint detection, whole-LAN visibility, and commercial production readiness are not implemented.
+Automatic response, full endpoint detection, whole-LAN visibility, and commercial production readiness are not implemented. The three real actions (IP block, host isolation, local account disable) only happen after a proposal, approval by a different administrator, and an opt-in on the sensor computer.
