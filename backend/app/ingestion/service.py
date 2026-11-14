@@ -24,15 +24,16 @@ def insert_events(db: Session, rows: list[dict]) -> int:
     """
     if not rows:
         return 0
+    # The statement is built without values and the rows are passed as parameters, so
+    # SQLAlchemy compiles it once and batches the rows itself ("insertmanyvalues").
     statement = (
         pg_insert(SecurityEvent)
-        .values(rows)
         .on_conflict_do_nothing(
             index_elements=[SecurityEvent.organization_id, SecurityEvent.dedup_key]
         )
         .returning(SecurityEvent.id)
     )
-    return len(db.execute(statement).all())
+    return len(db.connection().execute(statement, rows).all())
 
 
 def safe_filename(name: str) -> str:
