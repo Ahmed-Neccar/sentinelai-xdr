@@ -1,9 +1,11 @@
+import ipaddress
 from datetime import datetime
 from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import func, select
+from sqlalchemy import cast, func, select
+from sqlalchemy.dialects.postgresql import INET
 
 from app.api.deps import DbDep, require_roles
 from app.core.errors import AppError
@@ -12,6 +14,13 @@ from app.models import DataSource, SecurityEvent
 from app.schemas.common import Page, TokenUser
 
 router = APIRouter(prefix="/events", tags=["events"])
+
+
+def _ip_filter(value: str, name: str) -> ipaddress.IPv4Address | ipaddress.IPv6Address:
+    try:
+        return ipaddress.ip_address(value.strip())
+    except ValueError as exc:
+        raise AppError(400, "invalid_ip", f"{name} is not a valid IP address") from exc
 Reader = Annotated[TokenUser, Depends(require_roles(*READ_EVENTS))]
 
 
@@ -38,11 +47,13 @@ def list_events(
         stmt = stmt.where(SecurityEvent.event_type == event_type)
         count_stmt = count_stmt.where(SecurityEvent.event_type == event_type)
     if src_ip:
-        stmt = stmt.where(SecurityEvent.src_ip == src_ip)
-        count_stmt = count_stmt.where(SecurityEvent.src_ip == src_ip)
+        source = cast(str(_ip_filter(src_ip, "src_ip")), INET)
+        stmt = stmt.where(SecurityEvent.src_ip == source)
+        count_stmt = count_stmt.where(SecurityEvent.src_ip == source)
     if dst_ip:
-        stmt = stmt.where(SecurityEvent.dst_ip == dst_ip)
-        count_stmt = count_stmt.where(SecurityEvent.dst_ip == dst_ip)
+        destination = cast(str(_ip_filter(dst_ip, "dst_ip")), INET)
+        stmt = stmt.where(SecurityEvent.dst_ip == destination)
+        count_stmt = count_stmt.where(SecurityEvent.dst_ip == destination)
     if host_id:
         stmt = stmt.where(SecurityEvent.host_id == host_id)
         count_stmt = count_stmt.where(SecurityEvent.host_id == host_id)
