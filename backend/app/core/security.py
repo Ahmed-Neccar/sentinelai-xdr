@@ -19,6 +19,16 @@ def verify_password(password: str, hashed: str) -> bool:
     return password_hasher.verify(password, hashed)
 
 
+# Hash of a random value nobody knows. Signing in as an unknown or inactive account verifies the
+# submitted password against it, so that case costs as much time as a wrong password for a real
+# account and the response time does not reveal which accounts exist.
+_DUMMY_HASH = password_hasher.hash(uuid4().hex)
+
+
+def burn_password_check(password: str) -> None:
+    password_hasher.verify(password, _DUMMY_HASH)
+
+
 def create_access_token(
     *,
     user_id: UUID,

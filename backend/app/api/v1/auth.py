@@ -28,6 +28,7 @@ from app.core.mfa import (
 )
 from app.core.permissions import ADMIN
 from app.core.security import (
+    burn_password_check,
     create_access_token,
     create_refresh_token,
     decode_token,
@@ -294,6 +295,8 @@ def login(
             User.organization_id == organization.id,
         )
     )
+    if user is None or not user.is_active:
+        burn_password_check(payload.password)
     if (
         user is None
         or not user.is_active
