@@ -117,6 +117,14 @@ const tr: Record<string, string> = {
   'Test message failed: ':'Deneme mesajı iletilemedi: ',
   'No result after 2 minutes. Check that the worker is running.':'2 dakika içinde sonuç yok. Çalışan (worker) hizmetinin açık olduğunu kontrol edin.',
   'Test message queued; waiting for the result…':'Deneme mesajı sıraya alındı; sonuç bekleniyor…',
+  'Refresh registered sensors':'Kayıtlı sensörleri yenile',
+  'A name for the computer, for example Accounting PC':'Bilgisayar için bir ad, örneğin Muhasebe PC',
+  'Record what you checked and why…':'Neyi kontrol ettiğinizi ve nedenini yazın…',
+  'Why should an analyst consider this action?':'Bir analist bu eylemi neden değerlendirmeli?',
+  'Help':'Yardım',
+  'Open detection evidence':'Tespit kanıtını aç',
+  'Open event details':'Olay ayrıntılarını aç',
+  'Response proposals waiting for approval':'Onay bekleyen müdahale önerileri',
 }
 
 export function translate(text: string, language: Language): string {
