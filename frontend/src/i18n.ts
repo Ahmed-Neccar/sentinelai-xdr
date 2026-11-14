@@ -125,6 +125,14 @@ const tr: Record<string, string> = {
   'Open detection evidence':'Tespit kanıtını aç',
   'Open event details':'Olay ayrıntılarını aç',
   'Response proposals waiting for approval':'Onay bekleyen müdahale önerileri',
+  'System health':'Sistem sağlığı',
+  'problems need attention':'sorun ilgi bekliyor',
+  'Everything reports normally.':'Her şey normal görünüyor.',
+  'no heartbeat':'sinyal yok',
+  'Polling normally':'Normal sorgulanıyor',
+  'Failing':'Hata veriyor',
+  'channels enabled':'kanal açık',
+  'failed in 24 hours':'24 saatte başarısız',
 }
 
 export function translate(text: string, language: Language): string {

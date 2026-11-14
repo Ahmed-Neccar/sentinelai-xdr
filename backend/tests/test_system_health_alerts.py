@@ -123,3 +123,44 @@ def test_no_channel_means_no_alerts() -> None:
             set_organization_context(db, organization_id)
             db.execute(delete(Organization).where(Organization.id == organization_id))
             db.commit()
+
+
+def test_health_snapshot_and_endpoint(tenant) -> None:
+    from app.notifications.health import health_snapshot
+
+    now = datetime.now(UTC)
+    with tenant.session() as db:
+        source = DataSource(name="azure-1", source_type="cloud")
+        db.add(source)
+        db.flush()
+        db.add_all(
+            [
+                _live_job("online-pc", timedelta(seconds=5), now),
+                _live_job("silent-pc", timedelta(minutes=20), now),
+            ]
+        )
+        db.add(
+            CloudConnector(
+                data_source_id=source.id,
+                name="azure-prod",
+                provider="azure_activity",
+                credentials_encrypted="x",
+                status="error",
+                last_error="Authentication failed",
+                last_poll_started_at=now,
+            )
+        )
+        db.commit()
+        snapshot = health_snapshot(db, now)
+
+    assert snapshot["sensors"]["online"] == 1
+    assert [row["name"] for row in snapshot["sensors"]["silent"]] == ["silent-pc"]
+    [connector] = snapshot["connectors"]
+    assert connector["healthy"] is False and connector["last_error"] == "Authentication failed"
+    assert snapshot["notifications"] == {"enabled_channels": 0, "pending": 0, "failed_24h": 0}
+
+    response = tenant.client.get("/api/v1/system/health", headers=tenant.headers["auditor"])
+    assert response.status_code == 200
+    body = response.json()
+    assert body["sensors"]["online"] == 1 and "credentials" not in response.text
+    assert tenant.client.get("/api/v1/system/health").status_code == 401

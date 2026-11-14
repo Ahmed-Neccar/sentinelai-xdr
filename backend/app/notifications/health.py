@@ -8,7 +8,7 @@ same problem is repeated at most every REPEAT_AFTER while it lasts.
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models import CloudConnector, IngestionJob, NotificationChannel, NotificationDelivery
@@ -130,3 +130,70 @@ def queue_health_alerts(db: Session, now: datetime | None = None) -> int:
     if reported:
         db.commit()
     return reported
+
+
+SENSOR_ONLINE_WITHIN = timedelta(seconds=30)
+
+
+def health_snapshot(db: Session, now: datetime | None = None) -> dict[str, Any]:
+    """What the Overview page shows about the installation's own health.
+
+    Read-only and tenant-scoped through the session. A sensor is "online" when its running
+    session sent a heartbeat in the last 30 seconds and "silent" when it is still marked running
+    but has been quiet for the alert threshold (see `silent_sensors`).
+    """
+    current = now or datetime.now(UTC)
+    live = IngestionJob.original_filename.like("live-capture:%")
+    online = db.scalar(
+        select(func.count())
+        .select_from(IngestionJob)
+        .where(
+            live,
+            IngestionJob.status == "running",
+            IngestionJob.last_heartbeat_at > current - SENSOR_ONLINE_WITHIN,
+        )
+    )
+    silent = [
+        {
+            "name": job.original_filename.removeprefix("live-capture:"),
+            "last_heartbeat_at": job.last_heartbeat_at,
+        }
+        for job in silent_sensors(db, current)
+    ]
+    problem_ids = {connector.id for connector in failing_connectors(db, current)}
+    connectors = [
+        {
+            "name": connector.name,
+            "provider": connector.provider,
+            "status": connector.status,
+            "healthy": connector.enabled and connector.id not in problem_ids,
+            "enabled": connector.enabled,
+            "last_success_at": connector.last_success_at,
+            "last_error": connector.last_error,
+        }
+        for connector in db.scalars(select(CloudConnector).order_by(CloudConnector.name))
+    ]
+    channels = db.scalar(
+        select(func.count())
+        .select_from(NotificationChannel)
+        .where(NotificationChannel.enabled.is_(True))
+    )
+    since = current - timedelta(hours=24)
+    delivery: dict[str, int] = {
+        status: count
+        for status, count in db.execute(
+            select(NotificationDelivery.status, func.count())
+            .where(NotificationDelivery.created_at > since)
+            .group_by(NotificationDelivery.status)
+        ).all()
+    }
+    return {
+        "generated_at": current,
+        "sensors": {"online": online or 0, "silent": silent},
+        "connectors": connectors,
+        "notifications": {
+            "enabled_channels": channels or 0,
+            "pending": delivery.get("pending", 0),
+            "failed_24h": delivery.get("failed", 0),
+        },
+    }

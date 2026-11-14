@@ -202,6 +202,7 @@ Training is **CLI only** (`python -m app.detection.ml.train`). Not exposed as a 
 |--------|------|------|
 | GET | `/dashboard/summary` | analyst+ / auditor |
 | GET | `/reports/summary` | analyst+ / auditor |
+| GET | `/system/health` | analyst+ / auditor | Sensors online and silent, cloud connector health, notification queue and failures (the Overview page's health card) |
 | GET | `/audit-logs` | administrator, auditor |
 | GET | `/audit-logs/sign-in-security` | administrator, auditor | Failed password and SSO sign-ins in the last `hours` (default 24): counts by kind and the accounts and addresses with most attempts |
 | GET | `/settings` | authenticated (safe subset) |

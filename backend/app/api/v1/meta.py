@@ -79,6 +79,13 @@ def dashboard(db: DbDep, _: Reader) -> dict:
     }
 
 
+@router.get("/system/health")
+def system_health(db: DbDep, _: Reader) -> dict:
+    from app.notifications.health import health_snapshot
+
+    return health_snapshot(db)
+
+
 @router.get("/reports/summary")
 def report(db: DbDep, _: Reader, format: str = "json"):
     summary = dashboard(db, _)
