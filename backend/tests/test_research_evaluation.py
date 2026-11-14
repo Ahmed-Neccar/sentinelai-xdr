@@ -317,3 +317,52 @@ def test_run_otrf_reports_a_hit_and_a_miss(tmp_path, monkeypatch) -> None:
     assert by_name["absent.zip"]["missing"] is True
     text = run_otrf.markdown(rows)
     assert "1 / 2" in text and "not logged" in text and "absent.zip" in text
+
+
+def test_flow_csv_converter_round_trips_into_the_evaluation_format(tmp_path) -> None:
+    import csv
+
+    import convert_flows_csv
+    from sentinel_eval import methods
+    from sentinel_eval.datasets import load_labelled_events
+
+    source = tmp_path / "flows.csv"
+    with source.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.writer(handle)
+        writer.writerow(["Source IP", "Destination IP", "Destination Port", "Timestamp", "Label"])
+        for i in range(60):  # a fast scan from one address
+            writer.writerow(
+                ["203.0.113.5", "192.0.2.10", 1000 + i, f"2017-07-07 10:00:{i:02d}", "PortScan"]
+            )
+        for i in range(20):  # ordinary traffic from another
+            writer.writerow(["10.0.0.2", "192.0.2.20", 443, f"2017-07-07 10:00:{i:02d}", "BENIGN"])
+        writer.writerow(["not-an-ip", "192.0.2.20", 80, "2017-07-07 10:01:00", "BENIGN"])
+    target = tmp_path / "events.jsonl"
+    counts = convert_flows_csv.convert(
+        source,
+        target,
+        src="Source IP",
+        dst="Destination IP",
+        dport="Destination Port",
+        time_col="Timestamp",
+        label="Label",
+    )
+    assert counts == {"rows": 81, "written": 80, "skipped": 1, "attack_rows": 60}
+    events, labels = load_labelled_events(target)
+    assert labels == {"203.0.113.5": "PortScan", "10.0.0.2": "benign"}
+    fired = methods.run_rules(events)
+    assert "port_scan_like" in fired.get("203.0.113.5", {})
+    assert "10.0.0.2" not in fired
+
+
+def test_flow_converter_handles_decimal_addresses_and_odd_time_formats() -> None:
+    import convert_flows_csv
+
+    assert convert_flows_csv.address("3232238085", "int") == "192.168.10.5"
+    assert convert_flows_csv.address(" 10.0.0.1 ", "dotted") == "10.0.0.1"
+    assert convert_flows_csv.parse_time("7/7/2017 15:30").hour == 15
+    assert convert_flows_csv.parse_time("2017-07-07T15:30:00Z").tzinfo is not None
+    import pytest
+
+    with pytest.raises(ValueError):
+        convert_flows_csv.parse_time("53:44.4")  # minutes and seconds only: not a usable timestamp

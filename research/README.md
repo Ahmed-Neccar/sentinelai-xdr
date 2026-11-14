@@ -34,8 +34,8 @@ eşiklerin altında kalan yavaş saldırılar. **Zor durumların payı** en öne
 
 **Gerçek veri** için `--dataset` ile JSON Lines dosyası verilir (biçim: `sentinel_eval/datasets.py` başlığı). Her satır bir olaydır ve en az
 `event_time`, `event_type`, `entity`, `label` alanlarını taşır (`label`: `benign` veya saldırı ailesi adı). Genel biçim `docs/EVENT_SCHEMA.md` ile aynıdır.
-Kamuya açık bir veri kümesini (ör. CICIDS2017, UNSW-NB15, Mordor/OTRF Security-Datasets) bu biçime çeviren küçük bir betik yazmak yeterlidir; çeviri
-kuralları ve etiketleme sorumluluğu veri kümesinin belgelerindedir.
+Akış (flow) tabanlı etiketli CSV dosyaları (ör. CICIDS2017) için `convert_flows_csv.py` bu biçime çevirir; **tam tarih ve saat içeren** bir zaman sütunu şarttır
+(dakika ve saniyeden ibaret, satırları karışık bir kopya denendi ve reddedildi). Çeviri kuralları ve etiketleme sorumluluğu veri kümesinin belgelerindedir.
 
 Bu depoda **iyi huylu ve saldırı etiketli gerçek bir veri kümesiyle ölçüm yapılmamıştır**.
 
