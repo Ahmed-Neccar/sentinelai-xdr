@@ -9,6 +9,9 @@
 # changes the live stack, its volumes or .env. Without -ManifestPath the newest backup is used.
 param(
     [string]$ManifestPath,
+    # Also start the application (API and its migration job) on the restored data and check that
+    # it becomes ready and can read the restored organization. Slower: it builds the images.
+    [switch]$StartApp,
     [switch]$KeepStack
 )
 
@@ -92,6 +95,23 @@ try {
         $ok = ($restored -match '^\d+$') -and ([int64]$restored -le [int64]$live) -and ([int64]$restored -gt 0 -or [int64]$live -eq 0)
         Write-Check $ok ("{0,-22} restored {1,8}   live now {2,8}" -f $table, $restored, $live)
     }
+    if ($StartApp) {
+        $env:SENTINEL_ENV = "development"   # throw-away keys: production mode would demand real ones
+        $env:API_BIND_ADDRESS = "127.0.0.1:18003"
+        $env:POSTGRES_APP_PASSWORD = "rc-app-" + $env:POSTGRES_PASSWORD
+        $env:POSTGRES_MIGRATOR_PASSWORD = "rc-mig-" + $env:POSTGRES_PASSWORD
+        $appStart = $clock.Elapsed.TotalSeconds
+        $code = Invoke-Compose "up -d --build backend"
+        Write-Check ($code -eq 0) "application started on the restored data"
+        $apiReady = $false
+        foreach ($i in 1..60) {
+            try { if ((Invoke-RestMethod -UseBasicParsing -TimeoutSec 3 "http://127.0.0.1:18003/api/v1/ready").database) { $apiReady = $true; break } } catch { }
+            Start-Sleep -Seconds 2
+        }
+        Write-Check $apiReady ("API ready after {0:N0} s" -f ($clock.Elapsed.TotalSeconds - $appStart))
+        $orgs = & docker compose -p $Project exec -T backend python -c "from app.db.session import SessionLocal; from app.models import Organization; from sqlalchemy import func, select; print('organizations=' + str(SessionLocal().scalar(select(func.count()).select_from(Organization))))" 2>&1 | ForEach-Object { "$_" } | Where-Object { $_ -match "organizations=" } | Select-Object -First 1
+        Write-Check ([bool]$orgs -and $orgs -notmatch "organizations=0") "the application reads the restored data ($orgs)"
+    }
     $admins = Invoke-Sql "select count(*) from users u join user_roles ur on ur.user_id = u.id join roles r on r.id = ur.role_id where r.name = 'administrator' and u.is_active"
     Write-Check ($admins -match '^\d+$' -and [int64]$admins -ge 1) "at least one active administrator ($admins)"
 }
@@ -100,9 +120,10 @@ finally {
     Write-Host ("Total time {0:N1} s (restore step only is the figure to quote; starting Docker adds more)." -f $clock.Elapsed.TotalSeconds)
     if (-not $KeepStack) { Invoke-Compose "down --volumes --remove-orphans" | Out-Null }
     Pop-Location
-    foreach ($name in "POSTGRES_PASSWORD", "POSTGRES_BIND_ADDRESS", "POSTGRES_USER", "POSTGRES_DB") { Remove-Item "Env:$name" -ErrorAction SilentlyContinue }
+    foreach ($name in "POSTGRES_PASSWORD", "POSTGRES_BIND_ADDRESS", "POSTGRES_USER", "POSTGRES_DB", "SENTINEL_ENV", "API_BIND_ADDRESS", "POSTGRES_APP_PASSWORD", "POSTGRES_MIGRATOR_PASSWORD") { Remove-Item "Env:$name" -ErrorAction SilentlyContinue }
 }
 Write-Host ""
 if ($Failed) { Write-Host "$Failed check(s) failed." -ForegroundColor Red; exit 1 }
-Write-Host "All checks passed. This proves the dump and archive restore into an empty database; it does not prove the application starts on them or that the .env keys are recoverable." -ForegroundColor Green
+$tail = if ($StartApp) { " and that the application starts on them" } else { "" }
+Write-Host "All checks passed. This proves the dump and archive restore into an empty database$tail; it does not prove that the .env keys are recoverable." -ForegroundColor Green
 exit 0
