@@ -48,8 +48,7 @@ def fresh_auth_throttle():
     yield
 
 
-@pytest.fixture
-def tenant():
+def _tenant_context(prefix: str):
     if not os.environ.get("MFA_TEST_DATABASE_URL"):
         pytest.skip("Needs a migrated PostgreSQL test database")
     from app.core.security import hash_password
@@ -60,7 +59,7 @@ def tenant():
     from sqlalchemy import delete, select
 
     organization_id = uuid4()
-    slug = f"api-test-{organization_id.hex}"
+    slug = f"{prefix}-{organization_id.hex}"
     emails = {role: f"{role}-{organization_id.hex}@example.test" for role in ROLES}
     with SessionLocal() as db:
         db.add(Organization(id=organization_id, slug=slug, name="API test organization"))
@@ -98,3 +97,14 @@ def tenant():
             set_organization_context(db, organization_id)
             db.execute(delete(Organization).where(Organization.id == organization_id))
             db.commit()
+
+
+@pytest.fixture
+def tenant():
+    yield from _tenant_context("api-test")
+
+
+@pytest.fixture
+def other_tenant():
+    """A second, independent organization for isolation tests."""
+    yield from _tenant_context("api-other")
