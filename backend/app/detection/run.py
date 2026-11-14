@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.correlation.service import entity_keys_from_events, should_group
 from app.detection.builtin_rules import BUILTIN_RULES
+from app.detection.distinct import evaluate_distinct_rule
 from app.detection.engine import evaluate_rule
 from app.detection.login_pattern import evaluate_login_pattern
 from app.detection.ml.infer import score_events
@@ -299,6 +300,8 @@ def run_detection_for_job(db: Session, job_id: UUID) -> int:
             findings = evaluate_unique_port_rule(spec, candidates)
         elif spec.get("rule_id") == "suspicious_login_pattern":
             findings = evaluate_login_pattern(spec, candidates)
+        elif spec.get("distinct_field"):
+            findings = evaluate_distinct_rule(spec, candidates)
         else:
             findings = evaluate_rule(spec, candidates)
         for finding in findings:

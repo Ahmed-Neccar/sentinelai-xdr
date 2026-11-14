@@ -522,3 +522,29 @@ BUILTIN_RULES.extend(
         ("powerpnt.exe", "Microsoft PowerPoint"),
     )
 )
+
+BUILTIN_RULES.append(
+    {
+        "rule_id": "password_spray",
+        "title": "Password spraying: many accounts tried from one address",
+        "description": (
+            "One source address failed to sign in as many different accounts in ten minutes. "
+            "Spraying tries a few common passwords against many accounts to stay under "
+            "per-account lockouts. Shared gateways and monitoring tools can look the same."
+        ),
+        "severity": "high",
+        "version": 1,
+        "window_seconds": 600,
+        "group_by": ["src_ip"],
+        "distinct_field": "username",
+        "threshold": 6,
+        "match": {"event_type": "auth.failure"},
+        "mitre": [
+            {
+                "tactic": "Credential Access",
+                "technique_id": "T1110.003",
+                "justification": "Many accounts, few attempts each, from one source.",
+            }
+        ],
+    }
+)
