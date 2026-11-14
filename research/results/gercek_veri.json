@@ -1,0 +1,169 @@
+[
+ {
+  "file": "empire_schtasks_creation_standard_user.zip",
+  "sha256": "b073a18420c90394cd2b6ad7589c78d90eba32dc155ed04b12ac824a8fc591b4",
+  "technique": "T1053.005 scheduled task creation",
+  "note": "task creation by a standard user",
+  "expected": [
+   "windows_scheduled_task_created"
+  ],
+  "diagnosis": "",
+  "hit": true,
+  "hit_rules": [
+   "windows_scheduled_task_created"
+  ],
+  "windows_event_lines": 1297,
+  "security_events": 198,
+  "converted_events": 3,
+  "findings_by_rule": {
+   "windows_scheduled_task_created": 1
+  },
+  "other_rule_findings": 0
+ },
+ {
+  "file": "empire_psexec_dcerpc_tcp_svcctl.zip",
+  "sha256": "8f40e7fc86bbbf31ebd50b3ba537cf0f4378392ae3e74de84bee00aeb0de1fa5",
+  "technique": "T1569.002 service execution (PsExec-style)",
+  "note": "remote service installation",
+  "expected": [
+   "windows_service_installed"
+  ],
+  "diagnosis": "Hizmet kurulumu Windows tarafından yalnızca Sistem günlüğünde 7045 olarak yazıldı; Güvenlik günlüğünde 4697 yok (bunun için \"Güvenlik Sistemi Uzantısı\" denetimi açık olmalı). Sensör yalnızca Güvenlik günlüğünü okuduğu için olay kurala hiç ulaşmadı: bu bir toplama boşluğudur, kural hatası değil.",
+  "hit": false,
+  "hit_rules": [],
+  "windows_event_lines": 4348,
+  "security_events": 216,
+  "converted_events": 1,
+  "findings_by_rule": {},
+  "other_rule_findings": 0
+ },
+ {
+  "file": "empire_wmic_add_user_backdoor.zip",
+  "sha256": "88502d9a8d90f17aa638d7331120d52e7295480ea5fc4a156463399181d1c6e1",
+  "technique": "T1136.001 local account creation",
+  "note": "account added with wmic",
+  "expected": [
+   "windows_account_created"
+  ],
+  "diagnosis": "",
+  "hit": true,
+  "hit_rules": [
+   "windows_account_created"
+  ],
+  "windows_event_lines": 12278,
+  "security_events": 6138,
+  "converted_events": 31,
+  "findings_by_rule": {
+   "windows_account_created": 1,
+   "windows_scheduled_task_changed": 1,
+   "windows_security_group_member_added": 1
+  },
+  "other_rule_findings": 2
+ },
+ {
+  "file": "auditpol_system_user_auditpolicy_modification.zip",
+  "sha256": "5eb1776e7e9f79060a87ed9efcce0eebbab7940f8f51db8b2d67368c64e2187d",
+  "technique": "T1562.002 audit policy modification",
+  "note": "audit policy changed with auditpol",
+  "expected": [
+   "windows_audit_policy_changed"
+  ],
+  "diagnosis": "",
+  "hit": true,
+  "hit_rules": [
+   "windows_audit_policy_changed"
+  ],
+  "windows_event_lines": 13645,
+  "security_events": 307,
+  "converted_events": 83,
+  "findings_by_rule": {
+   "process_from_downloads_folder": 1,
+   "windows_audit_policy_changed": 1
+  },
+  "other_rule_findings": 1
+ },
+ {
+  "file": "empire_launcher_vbs.zip",
+  "sha256": "812da270cf8cda6f1948fb6275410f15dc1794d0bd6b623c9c25b2518285019c",
+  "technique": "T1059.005 VBScript launcher",
+  "note": "script host starting PowerShell",
+  "expected": [
+   "wscript_spawns_powershell",
+   "cscript_spawns_powershell"
+  ],
+  "diagnosis": "",
+  "hit": true,
+  "hit_rules": [
+   "wscript_spawns_powershell"
+  ],
+  "windows_event_lines": 2067,
+  "security_events": 652,
+  "converted_events": 5,
+  "findings_by_rule": {
+   "wscript_spawns_powershell": 1
+  },
+  "other_rule_findings": 0
+ },
+ {
+  "file": "cmd_mshta_vbscript_execute_psh.zip",
+  "sha256": "f5f700bc986bbe73edcc209754b28a3e0ad38c56877f7fc5ed6fd04bc036d9f4",
+  "technique": "T1218.005 mshta executing a script",
+  "note": "mshta starting PowerShell",
+  "expected": [
+   "mshta_spawns_powershell"
+  ],
+  "diagnosis": "",
+  "hit": true,
+  "hit_rules": [
+   "mshta_spawns_powershell"
+  ],
+  "windows_event_lines": 1127,
+  "security_events": 233,
+  "converted_events": 4,
+  "findings_by_rule": {
+   "mshta_spawns_powershell": 1,
+   "windows_security_log_cleared": 1
+  },
+  "other_rule_findings": 1
+ },
+ {
+  "file": "empire_wmi_dcerpc_wmi_IWbemServices_ExecMethod.zip",
+  "sha256": "96f1dbd9c5b077c8951b6e1f43b7fe01a2620c649889262481f15139a1746d88",
+  "technique": "T1047 remote WMI execution",
+  "note": "process started by the WMI provider host",
+  "expected": [
+   "wmi_spawns_powershell",
+   "wmi_spawns_cmd"
+  ],
+  "diagnosis": "WmiPrvSE'in powershell.exe başlatması yalnızca Sysmon (olay 1) kaydında var. Bu kaydın Güvenlik günlüğünde WmiPrvSE süreci görünüyor ama PowerShell alt süreci yok; kuralın eşleşecek bir şeyi olmadı: bu bir veri kaynağı boşluğudur (sensör Sysmon okumaz).",
+  "hit": false,
+  "hit_rules": [],
+  "windows_event_lines": 6383,
+  "security_events": 2962,
+  "converted_events": 4,
+  "findings_by_rule": {
+   "windows_scheduled_task_changed": 1
+  },
+  "other_rule_findings": 1
+ },
+ {
+  "file": "covenant_sharpwmi_create_dcerpc_wmi.zip",
+  "sha256": "6ff5d99660a2ce3691d198e63398ea50d8112472c469c756eeb82b83440ce626",
+  "technique": "T1047 remote WMI process creation",
+  "note": "process started by the WMI provider host",
+  "expected": [
+   "wmi_spawns_powershell",
+   "wmi_spawns_cmd"
+  ],
+  "diagnosis": "Güvenlik 4688 olayı WmiPrvSE.exe'nin GruntHTTP2.exe'yi (implant) başlattığını gösteriyor. WMI kuralları alt süreç olarak yalnızca powershell.exe ve cmd.exe'yi eşlediği için rastgele bir alt süreç ıskalanıyor: kural burada fazla dar. \"WmiPrvSE'in herhangi bir alt süreci\" kuralı bunu yakalardı; ancak yalnızca bu tek kayda göre ayarlanmış olacağı için eklenmedi. Önce ayrı bir kayıtla doğrulanması ve iyi huylu yönetim araçlarının maliyetinin ölçülmesi gerekir.",
+  "hit": false,
+  "hit_rules": [],
+  "windows_event_lines": 2343,
+  "security_events": 622,
+  "converted_events": 6,
+  "findings_by_rule": {
+   "windows_scheduled_task_changed": 1
+  },
+  "other_rule_findings": 1
+ }
+]

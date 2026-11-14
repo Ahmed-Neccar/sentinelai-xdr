@@ -127,3 +127,7 @@ Keep the Isolation Forest disabled, as it is now, and keep deterministic rules a
 ### Limits of this evaluation
 
 The population, its profile mix, and the attack shapes are assumptions written for this test; different assumptions give different numbers. Attacks are single-profile and not mixed with normal activity from the same source. The project's own `entity_aware_split` (alphabetical by entity) was replaced with a random entity split. The real-data check covers one small lab network and has no labels.
+
+## Update 2026-11-15: rule and method evaluation
+
+The rules, a threshold baseline and the Isolation Forest are now compared with precision, recall, F1 and false positive rate (with confidence intervals) in `research/results/RAPOR.md`, and the rules were tried on eight public real attack captures in `research/results/GERCEK_VERI.md`. The synthetic population in this file's anomaly-model section is a different, entity-level generator; the new framework simulates event streams and runs the real rule evaluators.

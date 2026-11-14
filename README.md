@@ -103,6 +103,7 @@ Backups contain telemetry and must be protected. Details, scheduling, and the re
 | `frontend/` | React/TypeScript console served by NGINX |
 | `sensor/` | Windows host sensor and its local controller |
 | `scripts/` | Backup, restore, off-site upload, load test, and evaluation tooling |
+| `research/` | Detection evaluation framework: labelled simulation, precision/recall/F1/FPR with confidence intervals, method comparison and the report (see `research/README.md`) |
 | `infra/aws/` | Least-privilege IAM and bucket policy templates for off-site backups |
 | `monitoring/` | Optional Prometheus configuration and starter alert rules |
 | `data/samples/` | Labelled synthetic sample datasets |

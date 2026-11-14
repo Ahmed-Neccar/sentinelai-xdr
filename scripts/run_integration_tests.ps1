@@ -53,7 +53,7 @@ try {
 
     Write-Host "Running tests ..."
     # Same layout as the repository: some tests load files from ../scripts.
-    $script = "mkdir /work && cp -r /src/backend /src/scripts /work/ && cd /work/backend && pip install --quiet --disable-pip-version-check --root-user-action=ignore pytest pytest-cov >/dev/null 2>&1; python -m pytest -q -p no:cacheprovider $Tests"
+    $script = "mkdir /work && cp -r /src/backend /src/scripts /src/research /work/ && cd /work/backend && pip install --quiet --disable-pip-version-check --root-user-action=ignore pytest pytest-cov >/dev/null 2>&1; python -m pytest -q -p no:cacheprovider $Tests"
     docker run @common -e "DATABASE_URL=$runtimeUrl" -e "MFA_TEST_DATABASE_URL=$runtimeUrl" `
         -e "TENANT_TEST_DATABASE_URL=$runtimeUrl" sentinelai-xdr-backend sh -c $script
     $code = $LASTEXITCODE

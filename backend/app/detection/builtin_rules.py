@@ -309,6 +309,7 @@ BUILTIN_RULES: list[dict] = [
         "window_seconds": 600,
         "group_by": ["src_ip"],
         "threshold": 4,
+        "min_failures": 3,
         "match": {"event_type": ["auth.failure", "auth.success"]},
         "mitre": [
             {

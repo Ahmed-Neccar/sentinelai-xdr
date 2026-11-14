@@ -16,6 +16,7 @@ def evaluate_login_pattern(
     spec: dict[str, Any], events: list[dict[str, Any]]
 ) -> list[dict[str, Any]]:
     window = int(spec.get("window_seconds") or 600)
+    min_failures = int(spec.get("min_failures") or 3)
     buckets: dict[tuple, list[dict[str, Any]]] = defaultdict(list)
     for event in events:
         if not matches(event, spec.get("match") or {}):
@@ -32,11 +33,11 @@ def evaluate_login_pattern(
     for (ws, src), group in buckets.items():
         failures = [e for e in group if e.get("event_type") == "auth.failure"]
         successes = [e for e in group if e.get("event_type") == "auth.success"]
-        if len(failures) < 3 or not successes:
+        if len(failures) < min_failures or not successes:
             continue
-        # "Failures then success": a success counts only if it comes at or after the third
-        # failure. A success followed by failures is an ordinary mistyped later attempt.
-        third_failure = sorted(_when(e) for e in failures)[2]
+        # "Failures then success": a success counts only if it comes at or after the last
+        # required failure. A success followed by failures is an ordinary mistyped later attempt.
+        third_failure = sorted(_when(e) for e in failures)[min_failures - 1]
         successes = [e for e in successes if _when(e) >= third_failure]
         if not successes:
             continue
