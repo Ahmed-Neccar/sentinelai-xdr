@@ -196,3 +196,7 @@ Limits: a sensor that is stopped from the panel is not reported (that is a norma
 ## One-screen status check
 
 `powershell -ExecutionPolicy Bypass -File scripts\status.ps1` prints OK, WARN or FAIL for: Docker and each service, API readiness, production mode, the database migration level, single sign-on, which addresses the published ports listen on, the SentinelAI firewall rules (and leftover temporary allow rules), the HTTPS certificate's remaining life, the age of the latest local backup, whether the encrypted `.env` copy is current, the last result of the off-site backup task, leftover copies of old `.env` files, whether a backup failure webhook is configured, free disk space and the sensor controller. It is read-only and prints no secrets; the exit code is 1 when anything fails. A warning is a to-do item, not necessarily a fault.
+
+## Cleaning up after the move to production mode
+
+`scriptsinish_production_cleanup.ps1` (elevated PowerShell; `-WhatIf` previews) asks before each step: it deletes the `.data\env-before-production-*` copies of the old `.env` (only when an encrypted `.env` backup newer than `.env` exists), deletes the throw-away local account `sentinel-test`, and removes the three temporary firewall allow rules from the early setup. It does not touch the block rules that keep other computers off the HTTPS port. Previewed on the live computer only (it correctly refused step 1 because the `.env` backup was older than `.env`); it has not been run for real.
