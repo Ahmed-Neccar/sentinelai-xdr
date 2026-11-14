@@ -26,12 +26,14 @@ from app.core.mfa import (
     recovery_code_hash,
     valid_counter,
 )
+from app.core.password_policy import check_new_password
 from app.core.permissions import ADMIN
 from app.core.security import (
     burn_password_check,
     create_access_token,
     create_refresh_token,
     decode_token,
+    hash_password,
     verify_password,
 )
 from app.db.session import set_organization_context
@@ -132,6 +134,7 @@ def _issue_tokens(
     auth_methods: list[str],
     recovery_codes: list[str] | None = None,
     action: str = "auth.login",
+    session_started_at: datetime | None = None,
 ) -> TokenResponse:
     from app.core.config import settings
 
@@ -148,6 +151,7 @@ def _issue_tokens(
         organization_id=user.organization_id,
         token_version=user.token_version,
         auth_methods=auth_methods,
+        session_started_at=session_started_at,
     )
     db.add(
         RefreshToken(
@@ -570,6 +574,18 @@ def refresh_token(request: Request, response: Response, db: DbDep) -> TokenRespo
     )
     if stored is None or stored.revoked:
         raise AppError(401, "invalid_token", "Refresh token revoked")
+    # Rotation must not stretch a session without limit: the clock runs from the sign-in.
+    try:
+        started_at = int(payload.get("sat", payload["iat"]))
+    except (KeyError, ValueError, TypeError) as exc:
+        raise AppError(401, "invalid_token", "Invalid refresh token") from exc
+    session_started = datetime.fromtimestamp(started_at, UTC)
+    from app.core.config import settings
+
+    if datetime.now(UTC) >= session_started + timedelta(hours=settings.session_max_hours):
+        stored.revoked = True
+        db.commit()
+        raise AppError(401, "session_expired", "Your session has ended. Sign in again")
     user = db.scalar(
         select(User)
         .options(selectinload(User.roles).selectinload(UserRole.role))
@@ -603,6 +619,7 @@ def refresh_token(request: Request, response: Response, db: DbDep) -> TokenRespo
         request,
         auth_methods=auth_methods,
         action="auth.refresh",
+        session_started_at=session_started,
     )
 
 
@@ -874,6 +891,53 @@ def set_organization_mfa_requirement(
         )
         db.commit()
     return {"required": organization.mfa_required, "reauthentication_required": payload.required}
+
+
+class PasswordChangeIn(BaseModel):
+    current_password: str = Field(min_length=1, max_length=256)
+    new_password: str = Field(min_length=1, max_length=256)
+
+
+@router.post("/password", response_model=TokenResponse)
+def change_own_password(
+    payload: PasswordChangeIn,
+    request: Request,
+    response: Response,
+    db: DbDep,
+    user: Annotated[TokenUser, Depends(get_current_user)],
+) -> TokenResponse:
+    """Change the signed-in person's own password.
+
+    The current password is required, so a stolen access token alone cannot take the account
+    over. Every other session ends; this one continues with fresh tokens.
+    """
+    enforce_auth_rate_limit(f"password-change:{user.organization_id}:{user.id}", limit=8)
+    account = db.get(User, user.id)
+    if account is None or not verify_password(payload.current_password, account.hashed_password):
+        write_audit(
+            db,
+            actor_id=user.id,
+            action="auth.password_change_failed",
+            target_type="user",
+            target_id=str(user.id),
+            ip_address=client_ip(request),
+        )
+        db.commit()
+        raise AppError(401, "invalid_credentials", "Current password is incorrect")
+    check_new_password(payload.new_password, email=account.email, current=payload.current_password)
+    account.hashed_password = hash_password(payload.new_password)
+    account.token_version += 1
+    account.mfa_challenge_id = None
+    for refresh in db.scalars(select(RefreshToken).where(RefreshToken.user_id == account.id)):
+        refresh.revoked = True
+    return _issue_tokens(
+        account,
+        db,
+        response,
+        request,
+        auth_methods=list(user.auth_methods) or ["pwd"],
+        action="auth.password_changed",
+    )
 
 
 @router.post("/logout")

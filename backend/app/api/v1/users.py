@@ -8,9 +8,11 @@ from sqlalchemy.orm import selectinload
 
 from app.api.deps import DbDep, client_ip, require_roles
 from app.audit.service import write_audit
+from app.core.auth_rate_limit import enforce_auth_rate_limit
 from app.core.errors import AppError
+from app.core.password_policy import check_new_password
 from app.core.permissions import ADMIN, ALL_ROLES, MANAGE_USERS
-from app.core.security import hash_password
+from app.core.security import hash_password, verify_password
 from app.models import Organization, Role, User, UserRole
 from app.schemas.common import Page, TokenUser
 
@@ -33,6 +35,8 @@ class UserPatch(BaseModel):
     is_active: bool | None = None
     roles: list[str] | None = None
     password: str | None = Field(default=None, min_length=12, max_length=128)
+    # The administrator's own password, required to set someone else's password.
+    confirm_password: str | None = Field(default=None, max_length=256)
     # Forget the bound SSO identity so the next SSO sign-in with this email
     # binds again, for example after the person's provider account was rebuilt.
     unlink_sso: bool = False
@@ -71,6 +75,7 @@ def create_user(payload: UserCreate, db: DbDep, actor: Admin, request: Request) 
         raise AppError(409, "conflict", "Email already exists")
     if any(role not in ALL_ROLES for role in payload.roles):
         raise AppError(400, "invalid_role", "Unknown role")
+    check_new_password(payload.password, email=payload.email)
     user = User(
         organization_id=actor.organization_id,
         email=payload.email.lower(),
@@ -129,6 +134,26 @@ def patch_user(
     if payload.roles is not None and any(role not in ALL_ROLES for role in payload.roles):
         raise AppError(400, "invalid_role", "Unknown role")
 
+    if payload.password:
+        if user.id == actor.id:
+            # Changing one's own password needs the current one: use POST /auth/password.
+            raise AppError(
+                400,
+                "use_password_change",
+                "Change your own password from Sign-in security, with your current password",
+            )
+        enforce_auth_rate_limit(f"admin-reset:{actor.organization_id}:{actor.id}", limit=8)
+        admin_account = db.get(User, actor.id)
+        if (
+            admin_account is None
+            or not payload.confirm_password
+            or not verify_password(payload.confirm_password, admin_account.hashed_password)
+        ):
+            raise AppError(
+                401, "invalid_credentials", "Confirm with your own password to set a password"
+            )
+        check_new_password(payload.password, email=user.email)
+
     current_roles = {link.role.name for link in user.roles if link.role is not None}
     next_roles = set(payload.roles) if payload.roles is not None else current_roles
     next_active = payload.is_active if payload.is_active is not None else user.is_active
@@ -185,7 +210,12 @@ def patch_user(
         target_id=str(user.id),
         ip_address=client_ip(request),
         # Field names only; never the new password or other values.
-        details={"changed": sorted(payload.model_dump(exclude_unset=True, exclude_none=True))},
+        details={
+            "changed": sorted(
+                set(payload.model_dump(exclude_unset=True, exclude_none=True))
+                - {"confirm_password"}
+            )
+        },
     )
     db.commit()
     loaded = db.scalar(

@@ -112,6 +112,7 @@ services:
       RETENTION_DAYS: ${RETENTION_DAYS:-90}
       ACCESS_TOKEN_MINUTES: ${ACCESS_TOKEN_MINUTES:-15}
       REFRESH_TOKEN_HOURS: ${REFRESH_TOKEN_HOURS:-8}
+      SESSION_MAX_HOURS: ${SESSION_MAX_HOURS:-12}
       UPLOAD_DIR: /app/.data/uploads
       ML_ARTIFACT_DIR: /app/.data/ml
       CORS_ORIGINS: "${CORS_ORIGINS:-http://127.0.0.1:8080,http://localhost:8080}"
@@ -165,6 +166,7 @@ services:
       RETENTION_DAYS: ${RETENTION_DAYS:-90}
       ACCESS_TOKEN_MINUTES: ${ACCESS_TOKEN_MINUTES:-15}
       REFRESH_TOKEN_HOURS: ${REFRESH_TOKEN_HOURS:-8}
+      SESSION_MAX_HOURS: ${SESSION_MAX_HOURS:-12}
       UPLOAD_DIR: /app/.data/uploads
       ML_ARTIFACT_DIR: /app/.data/ml
     volumes:

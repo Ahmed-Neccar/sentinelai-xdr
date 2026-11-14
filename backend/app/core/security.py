@@ -58,15 +58,26 @@ def create_refresh_token(
     organization_id: UUID,
     token_version: int,
     auth_methods: list[str] | None = None,
+    session_started_at: datetime | None = None,
 ) -> tuple[str, datetime]:
+    """Create a refresh token whose life never reaches past the session's absolute limit.
+
+    `session_started_at` is when the person actually signed in; rotation passes it on so the
+    limit counts from the sign-in and not from the latest refresh.
+    """
     now = datetime.now(UTC)
-    exp = now + timedelta(hours=settings.refresh_token_hours)
+    started = session_started_at or now
+    exp = min(
+        now + timedelta(hours=settings.refresh_token_hours),
+        started + timedelta(hours=settings.session_max_hours),
+    )
     payload = {
         "sub": str(user_id),
         "org": str(organization_id),
         "tv": token_version,
         "amr": auth_methods or ["pwd"],
         "type": "refresh",
+        "sat": int(started.timestamp()),
         "iat": int(now.timestamp()),
         "exp": int(exp.timestamp()),
         "jti": str(uuid4()),

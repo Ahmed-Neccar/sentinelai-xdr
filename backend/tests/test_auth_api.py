@@ -100,7 +100,9 @@ def test_a_token_from_before_a_password_reset_stops_working(tenant) -> None:
     users = client.get("/api/v1/users", headers=admin).json()["items"]
     analyst = next(u for u in users if u["email"] == tenant.emails["analyst"])
     reset = client.patch(
-        f"/api/v1/users/{analyst['id']}", headers=admin, json={"password": "Brand-new-password-3"}
+        f"/api/v1/users/{analyst['id']}",
+        headers=admin,
+        json={"password": "Brand-new-password-3", "confirm_password": PASSWORD},
     )
     assert reset.status_code == 200
     assert client.get("/api/v1/auth/me", headers=access).status_code == 401

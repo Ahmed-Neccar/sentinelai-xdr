@@ -66,7 +66,7 @@ def test_patch_user_changes_roles_password_and_activity(tenant) -> None:
     reset = client.patch(
         f"/api/v1/users/{analyst['id']}",
         headers=admin,
-        json={"password": "Another-long-password-2"},
+        json={"password": "Another-long-password-2", "confirm_password": PASSWORD},
     )
     assert reset.status_code == 200
     old = client.post(

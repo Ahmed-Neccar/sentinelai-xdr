@@ -57,6 +57,9 @@ class Settings(BaseSettings):
     upload_retention_days: int = Field(default=30, ge=1, le=3650, alias="UPLOAD_RETENTION_DAYS")
     access_token_minutes: int = Field(default=15, alias="ACCESS_TOKEN_MINUTES")
     refresh_token_hours: int = Field(default=8, alias="REFRESH_TOKEN_HOURS")
+    # Hard ceiling for one sign-in. Each refresh rotates the token but never extends the
+    # session beyond this, so a session cannot stay open for days by being used regularly.
+    session_max_hours: int = Field(default=12, ge=1, le=720, alias="SESSION_MAX_HOURS")
     upload_dir: str = Field(default=".data/uploads", alias="UPLOAD_DIR")
     ml_artifact_dir: str = Field(default=".data/ml", alias="ML_ARTIFACT_DIR")
 

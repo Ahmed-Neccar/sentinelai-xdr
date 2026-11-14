@@ -293,6 +293,17 @@ const tr: Record<string, string> = {
   'Low-and-slow guessing keeps each burst under per-minute thresholds.':'Düşük hızlı ve yavaş tahmin, her ani artışı dakika başına eşiklerin altında tutar.',
   'Spraying spread over an hour avoids the ten-minute spray rule.':'Bir saate yayılan püskürtme, on dakikalık püskürtme kuralından kaçar.',
   'A slow scan stays under the two-minute port-scan window.':'Yavaş bir tarama, iki dakikalık port taraması penceresinin altında kalır.',
+  'Change password':'Parolayı değiştir',
+  'Enter your current password first. Every other device signed in with this account is signed out.':'Önce mevcut parolanızı girin. Bu hesapla açık olan diğer tüm cihazların oturumu kapatılır.',
+  'New password':'Yeni parola','Repeat the new password':'Yeni parolayı tekrarlayın',
+  'At least 12 characters, with letters and digits or symbols. Not a common word and not your account name.':'En az 12 karakter; harflerle birlikte rakam veya simge içermeli. Yaygın bir sözcük ya da hesap adınız olmamalı.',
+  'Use at least 12 characters for the new password.':'Yeni parola için en az 12 karakter kullanın.',
+  'Choose a password different from the current one.':'Mevcut paroladan farklı bir parola seçin.',
+  'The two new passwords do not match.':'İki yeni parola birbiriyle eşleşmiyor.',
+  'Password changed. Other sessions were signed out.':'Parola değiştirildi. Diğer oturumlar kapatıldı.',
+  'Change your own password in Settings.':'Kendi parolanızı Ayarlar sayfasından değiştirin.',
+  'Enter your own password above first.':'Önce yukarıya kendi parolanızı girin.',
+  'Your password, to confirm a password reset':'Parola sıfırlamayı onaylamak için kendi parolanız',
 }
 
 export function translate(text: string, language: Language): string {

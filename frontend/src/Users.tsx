@@ -37,6 +37,7 @@ export default function Users({
   const [password, setPassword] = useState('')
   const [repeat, setRepeat] = useState('')
   const [resets, setResets] = useState<Record<string, string>>({})
+  const [adminPassword, setAdminPassword] = useState('')
   const [busy, setBusy] = useState(false)
 
   const load = useCallback(async () => {
@@ -100,8 +101,9 @@ export default function Users({
       return
     }
     void run(async () => {
-      await apiRequest(`/users/${item.id}`, { method: 'PATCH', body: JSON.stringify({ password: next }) })
+      await apiRequest(`/users/${item.id}`, { method: 'PATCH', body: JSON.stringify({ password: next, confirm_password: adminPassword }) })
       setResets(current => ({ ...current, [item.id]: '' }))
+      setAdminPassword('')
     }, 'Unable to reset password')
   }
 
@@ -151,6 +153,9 @@ export default function Users({
 
       <section className="panel data-panel">
         <div className="panel-head"><div><h2>{t('Accounts')}</h2><p>{t('Disabling an account signs the person out immediately.')}</p></div><button className="icon-button" aria-label={t('Refresh')} onClick={() => void load()}><RefreshCw size={16} /></button></div>
+        <label className="confirm-password">{t('Your password, to confirm a password reset')}
+          <input type="password" autoComplete="current-password" value={adminPassword} onChange={event => setAdminPassword(event.target.value)} />
+        </label>
         {items.length ? <div className="table-wrap"><table><thead><tr><th>{t('USER')}</th><th>{t('ROLE')}</th><th>{t('STATUS')}</th><th>{t('SIGN-IN')}</th><th>{t('CREATED')}</th><th>{t('ACTIONS')}</th></tr></thead><tbody>
           {items.map(item => { const self = item.id === user.id; return <tr key={item.id}>
             <td><b>{item.email}</b>{item.full_name && <small>{item.full_name}</small>}{self && <small>{t('This is you')}</small>}</td>
@@ -161,8 +166,10 @@ export default function Users({
             <td><small>{t(item.mfa_enabled ? 'Two-step verification on' : 'Two-step verification off')}</small><small>{t(item.sso_linked ? 'Single sign-on linked' : 'Single sign-on not linked')}</small></td>
             <td>{date(item.created_at)}</td>
             <td><div className="sensor-registry-actions">
-              <input aria-label={`${t('New password for')} ${item.email}`} type="password" autoComplete="new-password" minLength={12} placeholder={t('New password (12+)')} value={resets[item.id] || ''} onChange={event => setResets(current => ({ ...current, [item.id]: event.target.value }))} />
-              <button className="secondary" disabled={busy || !(resets[item.id] || '').length} onClick={() => resetPassword(item)}>{t('Set password')}</button>
+              {self ? <small>{t('Change your own password in Settings.')}</small> : <>
+                <input aria-label={`${t('New password for')} ${item.email}`} type="password" autoComplete="new-password" minLength={12} placeholder={t('New password (12+)')} value={resets[item.id] || ''} onChange={event => setResets(current => ({ ...current, [item.id]: event.target.value }))} />
+                <button className="secondary" disabled={busy || !(resets[item.id] || '').length || !adminPassword} title={adminPassword ? undefined : t('Enter your own password above first.')} onClick={() => resetPassword(item)}>{t('Set password')}</button>
+              </>}
               {item.sso_linked && <button className="secondary" disabled={busy} onClick={() => unlinkSso(item)}>{t('Unlink SSO')}</button>}
               <button className={item.is_active ? 'sensor-stop' : 'secondary'} disabled={busy || self} onClick={() => toggleActive(item)}>{item.is_active ? t('Disable') : t('Enable')}</button>
             </div></td>

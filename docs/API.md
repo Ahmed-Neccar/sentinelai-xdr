@@ -46,7 +46,8 @@ Interactive docs in Compose: `http://127.0.0.1:8001/docs` (OpenAPI). For a host-
 | Method | Path | Auth | Notes |
 |--------|------|------|-------|
 | POST | `/auth/login` | none | organization slug + email/password; returns access token or a five-minute MFA challenge |
-| POST | `/auth/refresh` | refresh cookie or body | rotates access token |
+| POST | `/auth/refresh` | refresh cookie or body | rotates the refresh token and issues an access token; refused with `session_expired` once the sign-in is older than `SESSION_MAX_HOURS` |
+| POST | `/auth/password` | user | change the caller's own password; needs `current_password`, applies the password policy, ends every other session and returns fresh tokens for this one |
 | POST | `/auth/logout` | user | invalidates refresh family |
 | GET | `/auth/me` | user | current user + roles |
 | GET | `/auth/oidc/status` | none | whether single sign-on is configured, and the origin it uses |
@@ -69,7 +70,7 @@ MFA uses TOTP authenticator apps. TOTP secrets are encrypted with `MFA_ENCRYPTIO
 |--------|------|------|
 | GET | `/users` | administrator |
 | POST | `/users` | administrator |
-| PATCH | `/users/{id}` | administrator | Change name, roles, active flag or password; `unlink_sso` forgets the bound SSO identity. The last active administrator cannot be disabled or demoted |
+| PATCH | `/users/{id}` | administrator | Change name, roles, active flag or someone else's password (`password` plus `confirm_password`, the administrator's own password; an administrator cannot set their own password here, use `POST /auth/password`); `unlink_sso` forgets the bound SSO identity. The last active administrator cannot be disabled or demoted |
 
 ### Data sources
 
@@ -224,6 +225,6 @@ The protected `/metrics` endpoint reports per-process HTTP request totals and la
 ## Token lifecycle
 
 - Access JWT: 15 minutes, `sub` = user id, `roles` claim
-- Refresh: 8 hours, httpOnly, `SameSite=Lax`, path `/api/v1/auth`
+- Refresh: 8 hours per token, httpOnly, `SameSite=Lax`, path `/api/v1/auth`. Rotation keeps the original sign-in time (`sat` claim), so a session ends at most `SESSION_MAX_HOURS` (default 12) after the sign-in however often it is refreshed
 - Logout increments token version / deletes refresh row
 - Documented: do not store access tokens in localStorage
