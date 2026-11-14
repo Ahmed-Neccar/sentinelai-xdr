@@ -345,6 +345,12 @@ class ControllerHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         if not self._authorize_local_origin():
+            # Read (a bounded amount of) the body first: answering and closing with unread
+            # data makes the peer's connection reset before it can read the refusal.
+            try:
+                self.rfile.read(min(int(self.headers.get("Content-Length", "0")), 4096))
+            except (ValueError, OSError):
+                pass
             self._send(403, {"error": "Local SentinelAI origin required."})
             return
         try:
