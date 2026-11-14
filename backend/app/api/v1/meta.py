@@ -1,6 +1,6 @@
 import csv
 import io
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Annotated
 from uuid import UUID
 
@@ -193,6 +193,42 @@ def audit_logs(db: DbDep, _: Auditor, page: int = 1, page_size: int = 20) -> Pag
         for a in rows
     ]
     return Page(items=items, page=page, page_size=page_size, total=total)
+
+
+SIGN_IN_FAILURE_ACTIONS = ("auth.login_failed", "auth.sso_failed", "auth.sso_identity_mismatch")
+
+
+@router.get("/audit-logs/sign-in-security")
+def sign_in_security(db: DbDep, _: Auditor, hours: int = 24) -> dict:
+    """Failed password and SSO sign-ins in the last `hours`, for the Audit page.
+
+    Reads the audit records the sign-in code already writes; nothing new is stored.
+    """
+    hours = min(max(hours, 1), 24 * 30)
+    since = datetime.now(UTC) - timedelta(hours=hours)
+    failed = AuditLog.action.in_(SIGN_IN_FAILURE_ACTIONS) & (AuditLog.created_at >= since)
+    by_action = {
+        action: count
+        for action, count in db.execute(
+            select(AuditLog.action, func.count()).where(failed).group_by(AuditLog.action)
+        ).all()
+    }
+    top = db.execute(
+        select(AuditLog.ip_address, AuditLog.target_id, func.count().label("n"), func.max(AuditLog.created_at))
+        .where(failed)
+        .group_by(AuditLog.ip_address, AuditLog.target_id)
+        .order_by(func.count().desc())
+        .limit(8)
+    ).all()
+    return {
+        "hours": hours,
+        "total": sum(by_action.values()),
+        "by_action": by_action,
+        "top_sources": [
+            {"ip_address": ip, "account": account, "attempts": n, "last_attempt": last}
+            for ip, account, n, last in top
+        ],
+    }
 
 
 @router.get("/settings")
