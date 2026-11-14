@@ -402,4 +402,123 @@ BUILTIN_RULES: list[dict] = [
         "match": {"severity": ["high", "critical"]},
         "mitre": [],
     },
+    {
+        "rule_id": "aws_cloudtrail_logging_tampered",
+        "title": "AWS CloudTrail logging stopped or changed",
+        "description": (
+            "CloudTrail reports a successful change that can stop or narrow audit logging "
+            "(StopLogging, DeleteTrail, UpdateTrail, PutEventSelectors). Confirm the actor and "
+            "that the change was approved; attackers disable logging to hide later activity."
+        ),
+        "severity": "high",
+        "version": 1,
+        "window_seconds": 300,
+        "group_by": ["account_id"],
+        "threshold": 1,
+        "match": {
+            "event_type": "cloud.aws.cloudtrail",
+            "attributes.service": "cloudtrail.amazonaws.com",
+            "attributes.cloud_status": "success",
+            "attributes.action": {
+                "op": "in",
+                "value": ["StopLogging", "DeleteTrail", "UpdateTrail", "PutEventSelectors"],
+            },
+        },
+        "mitre": [
+            {
+                "tactic": "Defense Evasion",
+                "technique_id": "T1562.008",
+                "justification": (
+                    "Disabling or narrowing cloud audit logging is a known evasion step."
+                ),
+            }
+        ],
+    },
+    {
+        "rule_id": "azure_diagnostic_logging_deleted",
+        "title": "Azure diagnostic or logging setting deleted",
+        "description": (
+            "Azure Activity Log reports a successful deletion of a diagnostic setting, which can "
+            "remove log export. Confirm the actor, scope, and approved change."
+        ),
+        "severity": "medium",
+        "version": 1,
+        "window_seconds": 300,
+        "group_by": ["subscription_id"],
+        "threshold": 1,
+        "match": {
+            "event_type": "cloud.azure.activity",
+            "attributes.action": "Microsoft.Insights/diagnosticSettings/delete",
+            "attributes.outcome": "success",
+        },
+        "mitre": [
+            {
+                "tactic": "Defense Evasion",
+                "technique_id": "T1562.008",
+                "justification": "Removing log export reduces visibility of later activity.",
+            }
+        ],
+    },
+    {
+        "rule_id": "azure_network_security_rule_changed",
+        "title": "Azure network security rule written",
+        "description": (
+            "Azure Activity Log reports a successful network security group rule write. Review "
+            "whether the rule opens inbound access and whether the change was approved."
+        ),
+        "severity": "medium",
+        "version": 1,
+        "window_seconds": 300,
+        "group_by": ["subscription_id"],
+        "threshold": 1,
+        "match": {
+            "event_type": "cloud.azure.activity",
+            "attributes.action": "Microsoft.Network/networkSecurityGroups/securityRules/write",
+            "attributes.outcome": "success",
+        },
+        "mitre": [],
+    },
 ]
+
+
+def _office_spawn_rule(parent: str, label: str) -> dict:
+    return {
+        "rule_id": f"{parent.split('.')[0]}_spawns_powershell",
+        "title": f"{label} started PowerShell",
+        "description": (
+            f"Windows process-creation telemetry shows {parent} starting powershell.exe. "
+            "This can be legitimate automation (macros, add-ins); review the parent/child "
+            "evidence and host context."
+        ),
+        "severity": "medium",
+        "version": 1,
+        "window_seconds": 300,
+        "group_by": ["host_id"],
+        "threshold": 1,
+        "match": {
+            "event_type": "process.start",
+            "attributes.source_name": "windows.security",
+            "attributes.process_name": {"op": "contains", "value": "powershell.exe"},
+            "attributes.parent_process_name": {"op": "contains", "value": parent},
+        },
+        "mitre": [
+            {
+                "tactic": "Execution",
+                "technique_id": "T1059.001",
+                "justification": (
+                    f"PowerShell launched by {label} is worth reviewing, "
+                    "but is not inherently malicious."
+                ),
+            }
+        ],
+    }
+
+
+BUILTIN_RULES.extend(
+    _office_spawn_rule(parent, label)
+    for parent, label in (
+        ("excel.exe", "Microsoft Excel"),
+        ("outlook.exe", "Microsoft Outlook"),
+        ("powerpnt.exe", "Microsoft PowerPoint"),
+    )
+)
