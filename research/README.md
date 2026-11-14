@@ -9,7 +9,7 @@ Sonuç raporları (Türkçe):
 - [`results/RAPOR.md`](results/RAPOR.md): yöntem karşılaştırması, simülasyon üzerinde, tablolar ve grafikler.
 - [`results/GERCEK_VERI.md`](results/GERCEK_VERI.md): halka açık gerçek saldırı kayıtlarında kural denemesi (yalnızca duyarlılık).
 - [`results/ADAY_KURALLAR.md`](results/ADAY_KURALLAR.md): yavaş saldırılar için üç aday kural, ayrı tohumlarda (`run_candidates.py`).
-- [`results/CICIDS2017.md`](results/CICIDS2017.md): etiketli gerçek akış verisinde (CIC-IDS2017) ağ kuralları (`run_cicids_parquet.py`; pyarrow gerektirir).
+- [`results/CICIDS2017.md`](results/CICIDS2017.md): etiketli gerçek akış verisinde (CIC-IDS2017) ağ kuralları, akış yönü ön işleme adayları doğrulama kümesinde seçilerek (`run_cicids_parquet.py`; pyarrow gerektirir).
 
 ## Araştırma sorusu
 
