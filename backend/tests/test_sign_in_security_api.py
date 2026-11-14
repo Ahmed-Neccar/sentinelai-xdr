@@ -45,16 +45,15 @@ def test_failed_sign_ins_are_summarised_for_administrators_only() -> None:
             )
             db.add(user)
             db.flush()
-            db.add(
-                UserRole(organization_id=organization_id, user_id=user.id, role_id=_role(db, role_name).id)
-            )
+            role = _role(db, role_name)
+            db.add(UserRole(organization_id=organization_id, user_id=user.id, role_id=role.id))
         db.commit()
     try:
         with TestClient(app) as client:
             for _ in range(3):
                 bad = client.post(
                     "/api/v1/auth/login",
-                    json={"organization_slug": slug, "email": analyst, "password": "wrong-password-123"},
+                    json={"organization_slug": slug, "email": analyst, "password": "bad-pw-1234"},
                 )
                 assert bad.status_code == 401
             good = client.post(
@@ -74,8 +73,11 @@ def test_failed_sign_ins_are_summarised_for_administrators_only() -> None:
                 "/api/v1/auth/login",
                 json={"organization_slug": slug, "email": analyst, "password": PASSWORD},
             )
-            analyst_headers = {"Authorization": f"Bearer {analyst_login.json()['access_token']}"}
-            assert client.get("/api/v1/audit-logs/sign-in-security", headers=analyst_headers).status_code == 403
+            token = analyst_login.json()["access_token"]
+            denied = client.get(
+                "/api/v1/audit-logs/sign-in-security", headers={"Authorization": f"Bearer {token}"}
+            )
+            assert denied.status_code == 403
     finally:
         with SessionLocal() as db:
             set_organization_context(db, organization_id)

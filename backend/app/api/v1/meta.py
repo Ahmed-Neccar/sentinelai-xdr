@@ -214,7 +214,12 @@ def sign_in_security(db: DbDep, _: Auditor, hours: int = 24) -> dict:
         ).all()
     }
     top = db.execute(
-        select(AuditLog.ip_address, AuditLog.target_id, func.count().label("n"), func.max(AuditLog.created_at))
+        select(
+            AuditLog.ip_address,
+            AuditLog.target_id,
+            func.count().label("n"),
+            func.max(AuditLog.created_at),
+        )
         .where(failed)
         .group_by(AuditLog.ip_address, AuditLog.target_id)
         .order_by(func.count().desc())
