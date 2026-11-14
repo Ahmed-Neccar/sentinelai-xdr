@@ -445,10 +445,10 @@ Done on branch `feat/ops-hardening-batch`; the live stack was rebuilt from it (`
 - **Checks run.** Backend suite as CI runs it (`run_integration_tests.ps1`, throwaway PostgreSQL): 178 tests passed, none skipped, including the new rule, hosts-cache and sign-in tests; Ruff and MyPy clean; 56 sensor tests; the panel builds. CI on GitHub for this batch had not run when this was written.
 - **Not done:** everything on the operator's own list, a second computer, Entra sign-in logs, a real Windows service, performance work beyond the cache, and a review of the new screens in a browser.
 
-## Update — 2026-11-14 (Events text search indexes)
+## Update — 2026-11-14 (Events text search indexes: tried, did not work, removed)
 
-- Migration 014 adds trigram (`pg_trgm`) indexes on `security_events.event_type` and `host_id`, so `GET /events?q=` no longer scans every row. It was applied to the live database by a normal rebuild after a fresh backup (migration level is now 014). The migration skips the indexes instead of failing if the extension cannot be created; here both indexes exist.
-- Checked read-only on the live database (51,592 events): the planner answers the search query with a bitmap scan on both indexes, 0.95 ms. This is the plan and timing for one query on this data size, not a load test; the earlier 0.6 s (one user) and 3–4 s (32 clients) at 160,000 events have not been re-measured through the API.
+- Migration 014 added trigram (`pg_trgm`) indexes on `security_events.event_type` and `host_id` to speed up `GET /events?q=`. A read-only check on the live database as a superuser showed the planner using them (0.95 ms), and that was recorded here as an improvement. **That was wrong for the application**: the API connects as `sentinel_runtime` under forced row-level security, and PostgreSQL only lets an index serve a condition ahead of the security policy when the operator is leakproof; `ILIKE` and `LIKE` are not (checked in `pg_proc`). The load test found it (text search unchanged at about 610 ms for one client), and `EXPLAIN ANALYZE` as the application role on 180,000 rows confirmed it: both indexes ignored, 604 ms, against 5 ms as a superuser.
+- Migration 015 drops both indexes (they only added write cost); the `pg_trgm` extension stays. Text search is therefore as slow as before: a substring match scans the tenant's events. Real fixes would change behaviour (prefix-only matching) or the row-level security design, and were not attempted.
 
 ## Update — 2026-11-14 (system health alerts)
 
@@ -464,3 +464,12 @@ Done on branch `feat/ops-hardening-batch`; the live stack was rebuilt from it (`
 
 - `process_ingestion_job` used to look up every event's dedup key and insert it inside its own savepoint, one row at a time. It now collects rows and inserts 500 per statement with `ON CONFLICT DO NOTHING` on (organization, dedup key), counting rows the database skipped as duplicates. Counting rules are unchanged and a database-backed test covers a file larger than one batch, duplicates inside a file, a second import of the same file, and rows without a key.
 - Measured in the throwaway test database (the same file of 8,000 synthetic network events with unique keys, detection included): 36.4 s (220 events/s) before, 4.5-4.8 s (about 1,700 events/s) after, three runs for the new code and one for the old. This is one synthetic shape on this computer, not a load test of the live stack, and the earlier figure of 430-530 events/s came from a different file mix. The live sensor path (small batches) was not changed.
+
+## Update — 2026-11-14 (load test repeated after the performance changes)
+
+`scripts\loadtestun_load_test.ps1` (isolated stack, 8 files of 20,000 events, same harness as `docs/PERFORMANCE_AND_ML_EVALUATION.md`), run on this computer while the live stack was also running. The trigram indexes were present in that run but unused (see above), so they only added write cost; run again without them, ingestion may be somewhat faster.
+
+- Ingestion per file: 1,591 events/s for the first file falling to about 670 events/s for the eighth (earlier record: 528 to 434). The decline is the detection step, which loads the recent-event window; it now dominates.
+- `/hosts` (cached): 99 requests/s at 8 clients with p95 121 ms and 93 requests/s at 32 clients with p95 525 ms (earlier: 17 and 19 requests/s, p95 832 ms and 2,405 ms).
+- `/events` and `/detections` are close to the earlier figures (for example `/events` at 32 clients: 59 requests/s, p95 807 ms; earlier 75 and 615 ms, within the noise of a shared machine). `/events?q=` is unchanged (p50 610 ms for one client; 5.5 s at 32 clients).
+- One run each; no repeat to establish variance.
