@@ -200,3 +200,7 @@ Limits: a sensor that is stopped from the panel is not reported (that is a norma
 ## Cleaning up after the move to production mode
 
 `scripts\finish_production_cleanup.ps1` (elevated PowerShell; `-WhatIf` previews) asks before each step: it deletes the `.data\env-before-production-*` copies of the old `.env` (only when an encrypted `.env` backup newer than `.env` exists), deletes the throw-away local account `sentinel-test`, and removes the three temporary firewall allow rules from the early setup. It does not touch the block rules that keep other computers off the HTTPS port. Previewed on the live computer only (it correctly refused step 1 because the `.env` backup was older than `.env`); it has not been run for real.
+
+## Restore rehearsal
+
+`powershell -ExecutionPolicy Bypass -File scripts\rehearse_restore.ps1` proves the newest backup (or `-ManifestPath`) restores, without touching the live stack. It starts a separate Compose project on its own database and volumes, checks the SHA-256 hashes, restores the dump and the application-data archive, compares the migration level and the row counts of the main tables with the live database, checks that an active administrator exists, prints the restore time and removes the project. It proves the data comes back; it does not start the application on the restored data, and it cannot show that the `.env` keys are recoverable (that needs `scripts\restore_env.ps1`).
