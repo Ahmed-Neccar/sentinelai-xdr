@@ -8,6 +8,7 @@ Sonuç raporları (Türkçe):
 
 - [`results/RAPOR.md`](results/RAPOR.md): yöntem karşılaştırması, simülasyon üzerinde, tablolar ve grafikler.
 - [`results/GERCEK_VERI.md`](results/GERCEK_VERI.md): halka açık gerçek saldırı kayıtlarında kural denemesi (yalnızca duyarlılık).
+- [`results/ADAY_KURALLAR.md`](results/ADAY_KURALLAR.md): yavaş saldırılar için üç aday kural, ayrı tohumlarda (`run_candidates.py`).
 
 ## Araştırma sorusu
 

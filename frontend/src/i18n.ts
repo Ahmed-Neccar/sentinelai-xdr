@@ -284,6 +284,15 @@ const tr: Record<string, string> = {
   'Real host isolation (cuts the sensor computer off the network)':'Gerçek cihaz yalıtma (sensör bilgisayarını ağdan keser)',
   'Real local account disable (Windows account on the sensor computer)':'Gerçek yerel hesap kapatma (sensör bilgisayarındaki Windows hesabı)',
   'Real IP block (Windows Firewall on the sensor computer)':'Gerçek IP engelleme (sensör bilgisayarındaki Windows Güvenlik Duvarı)',
+  'Slow brute force against one username':'Tek kullanıcı adına yavaş kaba kuvvet',
+  'Slow password spraying':'Yavaş parola püskürtme',
+  'Slow port scan':'Yavaş port taraması',
+  'Many sign-in failures for one account spread over an hour, below the burst rules. Experimental and off by default: measured only on simulated data, where it caught most slow attacks at a low false positive rate; on real networks expect extra alerts from retrying clients and monitoring tools.':'Tek hesap için bir saate yayılmış çok sayıda oturum açma hatası; ani artış kurallarının altında kalır. Deneyseldir ve varsayılan olarak kapalıdır: yalnızca simüle veride ölçüldü; orada yavaş saldırıların çoğunu düşük yanlış alarm oranıyla yakaladı. Gerçek ağlarda yeniden deneyen istemcilerden ve izleme araçlarından ek uyarı beklenir.',
+  'One source failed to sign in as many different accounts within an hour. Experimental and off by default: measured only on simulated data, where it caught most slow attacks at a low false positive rate; on real networks expect extra alerts from retrying clients and monitoring tools.':'Tek bir kaynak bir saat içinde çok sayıda farklı hesapla oturum açmayı denedi ve başarısız oldu. Deneyseldir ve varsayılan olarak kapalıdır: yalnızca simüle veride ölçüldü; orada yavaş saldırıların çoğunu düşük yanlış alarm oranıyla yakaladı. Gerçek ağlarda yeniden deneyen istemcilerden ve izleme araçlarından ek uyarı beklenir.',
+  'Many distinct destination ports from one source within an hour. Experimental and off by default: measured only on simulated data, where it caught most slow attacks at a low false positive rate; on real networks expect extra alerts from retrying clients and monitoring tools.':'Tek kaynaktan bir saat içinde çok sayıda farklı hedef port. Deneyseldir ve varsayılan olarak kapalıdır: yalnızca simüle veride ölçüldü; orada yavaş saldırıların çoğunu düşük yanlış alarm oranıyla yakaladı. Gerçek ağlarda yeniden deneyen istemcilerden ve izleme araçlarından ek uyarı beklenir.',
+  'Low-and-slow guessing keeps each burst under per-minute thresholds.':'Düşük hızlı ve yavaş tahmin, her ani artışı dakika başına eşiklerin altında tutar.',
+  'Spraying spread over an hour avoids the ten-minute spray rule.':'Bir saate yayılan püskürtme, on dakikalık püskürtme kuralından kaçar.',
+  'A slow scan stays under the two-minute port-scan window.':'Yavaş bir tarama, iki dakikalık port taraması penceresinin altında kalır.',
 }
 
 export function translate(text: string, language: Language): string {

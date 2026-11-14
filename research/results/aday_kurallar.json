@@ -1,0 +1,194 @@
+{
+ "seeds": [
+  1000,
+  1019
+ ],
+ "entities": 500,
+ "prevalence": 0.1,
+ "scenarios": {
+  "ana (zor durumlar az)": {
+   "auth_bruteforce_username_slow": {
+    "targets": [
+     "slow_brute_force",
+     "brute_force_fast"
+    ],
+    "all_targets": {
+     "tp": 140,
+     "fp": 134,
+     "fn": 0,
+     "tn": 8866,
+     "precision": 0.5109,
+     "precision_ci95": [
+      0.452,
+      0.5696
+     ],
+     "recall": 1.0,
+     "recall_ci95": [
+      0.9733,
+      1.0
+     ],
+     "false_positive_rate": 0.0149,
+     "false_positive_rate_ci95": [
+      0.0126,
+      0.0176
+     ],
+     "f1": 0.6763,
+     "accuracy": 0.9853
+    },
+    "slow_only_recall": 1.0
+   },
+   "password_spray_slow": {
+    "targets": [
+     "slow_spray",
+     "password_spray"
+    ],
+    "all_targets": {
+     "tp": 106,
+     "fp": 114,
+     "fn": 14,
+     "tn": 8886,
+     "precision": 0.4818,
+     "precision_ci95": [
+      0.4167,
+      0.5476
+     ],
+     "recall": 0.8833,
+     "recall_ci95": [
+      0.8137,
+      0.9292
+     ],
+     "false_positive_rate": 0.0127,
+     "false_positive_rate_ci95": [
+      0.0106,
+      0.0152
+     ],
+     "f1": 0.6235,
+     "accuracy": 0.986
+    },
+    "slow_only_recall": 0.7667
+   },
+   "port_scan_slow": {
+    "targets": [
+     "port_scan_slow",
+     "port_scan_fast"
+    ],
+    "all_targets": {
+     "tp": 110,
+     "fp": 80,
+     "fn": 10,
+     "tn": 8920,
+     "precision": 0.5789,
+     "precision_ci95": [
+      0.5079,
+      0.6469
+     ],
+     "recall": 0.9167,
+     "recall_ci95": [
+      0.8534,
+      0.9541
+     ],
+     "false_positive_rate": 0.0089,
+     "false_positive_rate_ci95": [
+      0.0071,
+      0.011
+     ],
+     "f1": 0.7097,
+     "accuracy": 0.9901
+    },
+    "slow_only_recall": 0.8333
+   }
+  },
+  "stres (zor durumlar çok)": {
+   "auth_bruteforce_username_slow": {
+    "targets": [
+     "slow_brute_force",
+     "brute_force_fast"
+    ],
+    "all_targets": {
+     "tp": 140,
+     "fp": 451,
+     "fn": 0,
+     "tn": 8549,
+     "precision": 0.2369,
+     "precision_ci95": [
+      0.2044,
+      0.2728
+     ],
+     "recall": 1.0,
+     "recall_ci95": [
+      0.9733,
+      1.0
+     ],
+     "false_positive_rate": 0.0501,
+     "false_positive_rate_ci95": [
+      0.0458,
+      0.0548
+     ],
+     "f1": 0.383,
+     "accuracy": 0.9507
+    },
+    "slow_only_recall": 1.0
+   },
+   "password_spray_slow": {
+    "targets": [
+     "slow_spray",
+     "password_spray"
+    ],
+    "all_targets": {
+     "tp": 108,
+     "fp": 341,
+     "fn": 12,
+     "tn": 8659,
+     "precision": 0.2405,
+     "precision_ci95": [
+      0.2033,
+      0.2822
+     ],
+     "recall": 0.9,
+     "recall_ci95": [
+      0.8333,
+      0.9419
+     ],
+     "false_positive_rate": 0.0379,
+     "false_positive_rate_ci95": [
+      0.0341,
+      0.042
+     ],
+     "f1": 0.3796,
+     "accuracy": 0.9613
+    },
+    "slow_only_recall": 0.8
+   },
+   "port_scan_slow": {
+    "targets": [
+     "port_scan_slow",
+     "port_scan_fast"
+    ],
+    "all_targets": {
+     "tp": 109,
+     "fp": 223,
+     "fn": 11,
+     "tn": 8777,
+     "precision": 0.3283,
+     "precision_ci95": [
+      0.28,
+      0.3805
+     ],
+     "recall": 0.9083,
+     "recall_ci95": [
+      0.8433,
+      0.948
+     ],
+     "false_positive_rate": 0.0248,
+     "false_positive_rate_ci95": [
+      0.0218,
+      0.0282
+     ],
+     "f1": 0.4823,
+     "accuracy": 0.9743
+    },
+    "slow_only_recall": 0.8167
+   }
+  }
+ }
+}

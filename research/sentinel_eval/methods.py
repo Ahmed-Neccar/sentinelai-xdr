@@ -32,7 +32,9 @@ def is_process_rule(rule_id: str) -> bool:
 
 def run_rules(events: list[dict], specs: list[dict] | None = None) -> dict[str, dict[str, int]]:
     """Map entity id to {rule id: number of findings (windows)} backed by the entity's events."""
-    specs = BUILTIN_RULES if specs is None else specs
+    if specs is None:
+        # What a fresh installation runs: rules that ship switched off are left out.
+        specs = [spec for spec in BUILTIN_RULES if spec.get("default_enabled", True)]
     owner = {event["id"]: event["entity"] for event in events}
     index = EventIndex(events)
     fired: dict[str, dict[str, int]] = defaultdict(dict)

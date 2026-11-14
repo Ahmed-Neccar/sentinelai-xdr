@@ -657,3 +657,89 @@ BUILTIN_RULES.extend(
         )
     ]
 )
+
+
+# Experimental long-window rules. They were written after the simulation showed that every slow
+# attack slips under the 5- and 10-minute windows, and measured on separate seeds (research/results/
+# ADAY_KURALLAR.md). The simulation does not contain the real-world noise that would make them fire,
+# such as a phone with a stale password retrying all day, so they ship switched off.
+_SLOW_NOTE = (
+    " Experimental and off by default: measured only on simulated data, where it caught most slow "
+    "attacks at a low false positive rate; on real networks expect extra alerts from retrying "
+    "clients and monitoring tools."
+)
+BUILTIN_RULES.extend(
+    [
+        {
+            "rule_id": "auth_bruteforce_username_slow",
+            "title": "Slow brute force against one username",
+            "description": (
+                "Many sign-in failures for one account spread over an hour, below the burst rules."
+                + _SLOW_NOTE
+            ),
+            "severity": "medium",
+            "version": 1,
+            "default_enabled": False,
+            "window_seconds": 3600,
+            "group_by": ["username"],
+            "threshold": 10,
+            "match": {"event_type": "auth.failure"},
+            "mitre": [
+                {
+                    "tactic": "Credential Access",
+                    "technique_id": "T1110.001",
+                    "justification": (
+                        "Low-and-slow guessing keeps each burst under per-minute thresholds."
+                    ),
+                }
+            ],
+        },
+        {
+            "rule_id": "password_spray_slow",
+            "title": "Slow password spraying",
+            "description": (
+                "One source failed to sign in as many different accounts within an hour."
+                + _SLOW_NOTE
+            ),
+            "severity": "medium",
+            "version": 1,
+            "default_enabled": False,
+            "window_seconds": 3600,
+            "group_by": ["src_ip"],
+            "distinct_field": "username",
+            "threshold": 8,
+            "match": {"event_type": "auth.failure"},
+            "mitre": [
+                {
+                    "tactic": "Credential Access",
+                    "technique_id": "T1110.003",
+                    "justification": (
+                        "Spraying spread over an hour avoids the ten-minute spray rule."
+                    ),
+                }
+            ],
+        },
+        {
+            "rule_id": "port_scan_slow",
+            "title": "Slow port scan",
+            "description": (
+                "Many distinct destination ports from one source within an hour." + _SLOW_NOTE
+            ),
+            "severity": "low",
+            "version": 1,
+            "default_enabled": False,
+            "window_seconds": 3600,
+            "group_by": ["src_ip"],
+            "threshold": 40,
+            "unique_field": "dst_port",
+            "match": {"event_type": ["net.conn", "zeek.conn", "suricata.flow"]},
+            "mitre": [
+                {
+                    "tactic": "Discovery",
+                    "technique_id": "T1046",
+                    "justification": "A slow scan stays under the two-minute port-scan window.",
+                }
+            ],
+        },
+    ]
+)

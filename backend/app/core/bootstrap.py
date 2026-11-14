@@ -54,7 +54,7 @@ def seed_rules(db: Session) -> None:
             rule_id=spec["rule_id"],
             title=spec["title"],
             description=spec["description"],
-            enabled=True,
+            enabled=spec.get("default_enabled", True),
             current_version=version,
         )
         db.add(rule)
