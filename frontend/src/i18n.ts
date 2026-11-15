@@ -344,6 +344,7 @@ const tr: Record<string, string> = {
   'This sensor is offline, so the action could not be carried out. Start the sensor and try again':'Bu sensör çevrimdışı, eylem uygulanamaz. Sensörü başlatıp yeniden deneyin',
   'This sensor is offline. Approve again once it is running':'Bu sensör çevrimdışı. Çalışmaya başlayınca yeniden onaylayın',
   'The sensor can no longer carry out this action':'Sensör artık bu eylemi uygulayamıyor',
+  'online':'çevrimiçi','No signal for over 45 seconds. Actions cannot be sent to this sensor until it reports again.':'45 saniyeyi aşkın süredir sinyal yok. Sensör yeniden bildirim yapana kadar ona eylem gönderilemez.',
 }
 
 export function translate(text: string, language: Language): string {

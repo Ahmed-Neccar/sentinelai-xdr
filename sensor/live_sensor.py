@@ -7,8 +7,10 @@ import base64
 import getpass
 import hashlib
 import json
+import os
 import platform
 import queue
+import random
 import subprocess
 import sys
 import threading
@@ -319,27 +321,137 @@ def project_env_credentials() -> tuple[str, str]:
     return email, password
 
 
+# The spool holds event batches the server could not take. It is bounded so a long outage cannot
+# fill the disk: when a limit is reached the oldest batches are dropped first (the newest events
+# are the most useful) and the drop is reported on the console.
+SPOOL_MAX_FILES = 2000
+SPOOL_MAX_BYTES = 500 * 1024 * 1024
+QUARANTINE_MAX_FILES = 20
+STALE_TEMP_SECONDS = 3600
+
+
+class _WaitingToRetry(RuntimeError):
+    """Raised instead of calling a server that failed moments ago."""
+
+
+class Backoff:
+    """Exponential wait with jitter, so a recovering server is not hit by every sensor at once."""
+
+    def __init__(self, base: float = 10.0, cap: float = 300.0, jitter: float = 0.2) -> None:
+        self.base = base
+        self.cap = cap
+        self.jitter = jitter
+        self.failures = 0
+
+    def success(self) -> None:
+        self.failures = 0
+
+    def failure(self) -> float:
+        """Record a failure and return how many seconds to wait before the next attempt."""
+        self.failures += 1
+        delay = min(self.cap, self.base * (2 ** (self.failures - 1)))
+        return delay * (1 + self.jitter * (2 * random.random() - 1))
+
+
+def _spool_files(spool: Path) -> list[Path]:
+    return sorted(spool.glob("unsent-*.json"))
+
+
+def _enforce_spool_limits(spool: Path, incoming_bytes: int) -> int:
+    """Delete the oldest batches until one more of this size fits. Returns how many were dropped."""
+    files = _spool_files(spool)
+    sizes = {}
+    for path in files:
+        try:
+            sizes[path] = path.stat().st_size
+        except OSError:
+            sizes[path] = 0
+    total = sum(sizes.values()) + incoming_bytes
+    dropped = 0
+    while files and (len(files) + 1 > SPOOL_MAX_FILES or total > SPOOL_MAX_BYTES):
+        oldest = files.pop(0)
+        try:
+            oldest.unlink()
+        except OSError:
+            pass
+        total -= sizes.get(oldest, 0)
+        dropped += 1
+    if dropped:
+        print(
+            f"The unsent-event queue reached its limit; dropped the {dropped} oldest batch(es).",
+            file=sys.stderr,
+        )
+    return dropped
+
+
 def spool_events(spool: Path, events: list[dict]) -> Path:
+    """Save a batch the server did not take. The file appears complete or not at all."""
     spool.mkdir(parents=True, exist_ok=True)
-    path = spool / f"unsent-{datetime.now(UTC).strftime('%Y%m%dT%H%M%S%fZ')}.json"
-    path.write_text(json.dumps(events, indent=2), encoding="utf-8")
+    payload = json.dumps(events, indent=2)
+    _enforce_spool_limits(spool, len(payload.encode("utf-8")))
+    name = f"unsent-{datetime.now(UTC).strftime('%Y%m%dT%H%M%S%fZ')}-{uuid4().hex[:6]}.json"
+    path = spool / name
+    temporary = spool / f".tmp-{uuid4().hex}"
+    temporary.write_text(payload, encoding="utf-8")
+    os.replace(temporary, path)  # atomic: a crash leaves only a .tmp file, never half a batch
     return path
 
 
+def _quarantine(path: Path) -> Path | None:
+    """Move a batch that cannot be read aside so it never blocks the ones behind it."""
+    target = path.with_name("bad-" + path.name)
+    try:
+        os.replace(path, target)
+    except OSError:
+        return None
+    bad = sorted(path.parent.glob("bad-*.json"))
+    for old in bad[: max(0, len(bad) - QUARANTINE_MAX_FILES)]:
+        try:
+            old.unlink()
+        except OSError:
+            pass
+    return target
+
+
+def _remove_stale_temporaries(spool: Path) -> None:
+    now = time.time()
+    for path in spool.glob(".tmp-*"):
+        try:
+            if now - path.stat().st_mtime > STALE_TEMP_SECONDS:
+                path.unlink()
+        except OSError:
+            pass
+
+
 def replay_spool(api: ApiClient, job_id: str, spool: Path, batch_size: int) -> int:
-    """Forward saved batches to the current live session; retain a file until all posts succeed."""
+    """Forward saved batches to the current live session; retain a file until all posts succeed.
+
+    A file that is not a valid batch is set aside as `bad-*` and the next one is tried; a failed
+    upload stops the pass (the server is not reachable, so the rest would fail too).
+    """
     recovered = 0
-    for path in sorted(spool.glob("unsent-*.json")):
+    if spool.exists():
+        _remove_stale_temporaries(spool)
+    for path in _spool_files(spool):
         try:
             events = json.loads(path.read_text(encoding="utf-8"))
             if not isinstance(events, list) or not all(isinstance(event, dict) for event in events):
                 raise ValueError("spool file must contain a list of event objects")
+        except (OSError, ValueError) as exc:
+            moved = _quarantine(path)
+            print(
+                f"Queued batch {path.name} is unreadable and was set aside"
+                f"{' as ' + moved.name if moved else ''}: {exc}",
+                file=sys.stderr,
+            )
+            continue
+        try:
             for start in range(0, len(events), batch_size):
                 batch = events[start : start + batch_size]
                 api.post(f"/api/v1/ingest/live/{job_id}/events", {"events": batch})
                 recovered += len(batch)
             path.unlink()
-        except (OSError, ValueError, httpx.HTTPError, RuntimeError) as exc:
+        except (OSError, httpx.HTTPError, RuntimeError) as exc:
             print(f"Could not replay queued batch {path.name}; it remains on disk: {exc}", file=sys.stderr)
             break
     if recovered:
@@ -653,7 +765,10 @@ def main() -> int:
     last_flush = time.monotonic()
     last_windows_poll = last_flush
     last_spool_retry = last_flush
-    last_heartbeat = last_flush
+    heartbeat_backoff = Backoff(10.0, 120.0)
+    next_heartbeat_at = last_flush
+    upload_backoff = Backoff(5.0, 120.0)
+    upload_blocked_until = 0.0
     authorization_lost = False
     deadline = last_flush + args.duration_seconds if args.duration_seconds else None
 
@@ -669,7 +784,7 @@ def main() -> int:
             print("Only IP/port/protocol/time network headers are collected. Press Ctrl+C to stop.")
         while True:
             now = time.monotonic()
-            if now - last_heartbeat >= 10.0:
+            if now >= next_heartbeat_at:
                 server_actions = None
                 try:
                     heartbeat = api.post(
@@ -686,12 +801,16 @@ def main() -> int:
                     )
                     if allowed_actions and isinstance(heartbeat, dict):
                         server_actions = heartbeat.get("response_actions")
+                    heartbeat_backoff.success()
+                    next_heartbeat_at = now + 10.0
                 except SensorAuthorizationError as exc:
                     authorization_lost = True
                     print(f"Sensor access was revoked; stopping capture: {exc}", file=sys.stderr)
                     raise
                 except (httpx.HTTPError, RuntimeError) as exc:
-                    print(f"Sensor heartbeat failed; it will retry: {exc}", file=sys.stderr)
+                    wait = heartbeat_backoff.failure()
+                    next_heartbeat_at = now + wait
+                    print(f"Sensor heartbeat failed; retrying in {wait:.0f} seconds: {exc}", file=sys.stderr)
                 # Expiry runs every time, with or without the server. New
                 # blocks are only taken when blocking was allowed at start.
                 for action_id, state, detail in enforcer.handle(server_actions):
@@ -707,7 +826,6 @@ def main() -> int:
                         # The server offers the action again on the next
                         # heartbeat, and the enforcer answers idempotently.
                         print(f"Could not report IP block result; will retry: {exc}", file=sys.stderr)
-                last_heartbeat = now
             if windows_log and now - last_windows_poll >= 5.0:
                 try:
                     pending_events = windows_log.poll()
@@ -723,16 +841,24 @@ def main() -> int:
             should_flush = len(batch) >= args.batch_size or (batch and now - last_flush >= args.flush_seconds)
             if should_flush:
                 try:
+                    if now < upload_blocked_until:
+                        raise _WaitingToRetry("waiting before the next upload attempt")
                     api.post(f"/api/v1/ingest/live/{job_id}/events", {"events": batch})
                     mark_forwarded(batch)
+                    upload_backoff.success()
+                    upload_blocked_until = 0.0
                     replay_spool(api, job_id, spool, args.batch_size)
                 except SensorAuthorizationError as exc:
                     authorization_lost = True
                     print(f"Sensor access was revoked; stopping capture: {exc}", file=sys.stderr)
                     raise
+                except _WaitingToRetry:
+                    spool_events(spool, batch)
                 except (httpx.HTTPError, RuntimeError) as exc:
                     path = spool_events(spool, batch)
-                    print(f"Upload failed; header-only batch saved to {path}: {exc}", file=sys.stderr)
+                    wait = upload_backoff.failure()
+                    upload_blocked_until = now + wait
+                    print(f"Upload failed; batch saved to {path}; next attempt in {wait:.0f} seconds: {exc}", file=sys.stderr)
                 batch.clear()
                 last_flush = now
                 print(
@@ -740,7 +866,7 @@ def main() -> int:
                     f"{windows_logons_sent} Windows logon events and "
                     f"{process_events_sent} process-start events and {endpoint_events_sent} endpoint/security events"
                 )
-            elif spool.exists() and now - last_spool_retry >= args.flush_seconds:
+            elif spool.exists() and now >= upload_blocked_until and now - last_spool_retry >= args.flush_seconds:
                 replay_spool(api, job_id, spool, args.batch_size)
                 last_spool_retry = now
             if deadline and now >= deadline:

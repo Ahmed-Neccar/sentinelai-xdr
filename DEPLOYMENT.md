@@ -68,6 +68,7 @@ The first form is for passwords and `SECRET_KEY`. The second produces the 32-byt
 | `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `OIDC_REDIRECT_URI` | optional | Single-provider SSO; all four or none |
 | `MAX_UPLOAD_BYTES`, `MAX_UPLOAD_ROWS` | optional | Import limits (10 MiB, 20,000 rows) |
 | `RETENTION_DAYS` | optional | Default event retention (90). Each organization can change it in Settings |
+| `API_RATE_LIMIT_ENABLED`, `API_SESSION_LIMIT_PER_MINUTE`, `API_ADDRESS_LIMIT_PER_MINUTE`, `API_HEAVY_LIMIT_PER_MINUTE` | optional | API-wide request limits (on in production by default: 1200 per session and 3000 per address per minute, 20 per minute for uploads and audit export). Also set HSTS and `limit_req` on the reverse proxy you put in front: the bundled lab proxy does neither |
 | `ACCESS_TOKEN_MINUTES`, `REFRESH_TOKEN_HOURS`, `SESSION_MAX_HOURS` | optional | Session lifetimes (15 minutes, 8 hours per refresh token, 12 hours absolute from sign-in) |
 | `API_BIND_ADDRESS`, `POSTGRES_BIND_ADDRESS` | optional | Host address and port for the two published services |
 | `API_WORKERS` | optional | Number of API processes (default 1). Login throttling is shared through Redis; the `/hosts` cache and metrics counters are per process. Rehearsed with 3 on the isolated production stack, not run on the live one |

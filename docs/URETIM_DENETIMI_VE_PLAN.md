@@ -1,7 +1,6 @@
 # Üretim olgunluğu: denetim raporu ve düzeltme planı
 
-Tarih: 2026-11-15. Durum: **yalnızca denetim; bu rapor için hiçbir kod değiştirilmedi.** Plan onaya
-sunulur, onaydan sonra adım adım uygulanır.
+Tarih: 2026-11-15. Durum: denetim raporu yazıldı; **onay sonrası uygulama başladı** (sıra 1→2→4→3→5, bölüm 5'e bakın).
 
 ## 0. Kapsam ve dürüst sınırlar
 
@@ -46,7 +45,7 @@ planı kurmamak için ne olduğunu aşağıda açıkça ayırdım.
 | A4 | **Onay anında yeniden doğrulama yok.** Teklifle onay arasında sensör gitmiş olabilir (24 saate kadar); onay yalnızca öneri durumuna ve süreye bakar, sensörün hâlâ yetkili ve çevrimiçi olduğuna bakmaz. Doğrulandı | Y |
 | A5 | **Yerel denetleyici durumu sunucuya yansımıyor.** `127.0.0.1:8765` kapalıysa bunu yalnızca tarayıcı görür; sunucu bilmez. Başlat/durdur akışı arayüzde hata mesajı gösterir ama teklif/onay akışı denetleyiciyi hiç dikkate almaz. Doğrulandı | O |
 | A6 | `failed` / `refused` sonuçları kullanıcıya görünür mü: arayüz `enforcement_detail`'i gösteriyor (`detail[:255]`); ancak hata kodu yapısal değil, serbest metin; panoda sayaç ve uyarı yok. Kısmen doğrulandı | O |
-| A7 | Gerçek zamanlı doğrulama: arayüz yoklama (polling) ile çalışıyor; kalp atışı kesilen sensör için sunucu tarafı "çevrimdışı" olayı/bildirimi yok. Doğrulandı | O |
+| A7 | **Düzeltme:** İlk sürümde "sunucu tarafı çevrimdışı bildirimi yok" yazmıştım; bu yanlıştı. `notifications/health.py` 5 dakika sessiz kalan sensör için zaten bildirim kuyruğa alıyor (Celery, 5 dakikada bir). Eksik olan: 45 sn'lik anlık çevrimiçi/çevrimdışı gösterimi ve eylem akışına bağlanması (A1) | D |
 
 ### Güvenlik ve yetkilendirme (madde 2)
 
@@ -56,7 +55,7 @@ planı kurmamak için ne olduğunu aşağıda açıkça ayırdım.
 | B2 | **Sensör hesabı yönetici parolasına denk bir sır taşıyor.** Sensör, parola ile `/auth/login` yapıyor ve parolayı yerelde saklıyor (`read_project_credentials`). Çalınan sensör bilgisayarı, o hesabın izinleriyle API'ye girer. İmzalı kalp atışı (`_verify_registered_sensor_request`) bunu kısmen hafifletiyor. Kısmen doğrulandı | O |
 | B3 | **Yerel denetleyici yalnızca `Origin` başlığına güveniyor.** Aynı bilgisayardaki herhangi bir işlem bu başlığı taklit edip sensörü başlatıp durdurabilir. Belirteç yok. Doğrulandı | O |
 | B4 | `/health`, `/ready` herkese açık; `/metrics` jetonla korunuyor. `/ready` ayrıntı sızdırıyor mu: incelenmedi | D |
-| B5 | **HSTS ve katı güvenlik başlıkları:** `frontend/nginx.conf` başlıkları var (nosniff, DENY, CSP); `Strict-Transport-Security` TLS proxy'sinde var mı doğrulanmadı | D |
+| B5 | **HSTS:** `deploy/tls-lab/nginx.conf` bilerek HSTS göndermiyor (yorumu: "localhost" üzerindeki tüm portları etkilerdi) ve "üretim yapılandırması değildir" diyor. Gerçek bir üretim ters vekili müşteri ortamına özgüdür; HSTS ve `limit_req` orada ayarlanmalı (DEPLOYMENT.md'ye not eklendi). Kod hatası değil, dağıtım notu | D |
 | B6 | RBAC genel olarak sağlam; ancak rol kümeleri kodda dağınık (`Reader`, `AllowedList`, `LiveSensorUser`, `READ_EVENTS`...). Yeni uç nokta eklenirken yetki unutulması riski var; "her uç nokta bir yetki bildirmeli" kuralını zorlayan bir test yok. Doğrulandı | O |
 | B7 | Denetim günlüğü: kimlik eylemleri kayıtlı; **okuma eylemleri** (denetim dışa aktarma, kullanıcı listesi gibi hassas okumalar) kaydedilmiyor. Dışa itme yok, yalnızca çekme. Doğrulandı | O |
 | B8 | Sonradan fark edilen: oturum 12 saatte biter; **sensör** hesabı bu süreyi yenilemede otomatik tekrar giriş ile aşıyor (tasarım gereği), bu yüzden sensör oturumu mutlak sınıra bağlı değil | D |
@@ -142,3 +141,29 @@ commit'lenir; canlıya alma her aşama sonunda ayrıca sorulur.
    eklensin).
 4. Sensör kuyruğu üst sınırı (öneri 500 MB veya 2000 dosya).
 5. Her aşama sonunda canlıya alma için ayrı onay mı, tek seferde mi.
+
+## 5. Uygulama durumu (2026-11-15)
+
+| Madde | Durum |
+|---|---|
+| A1 çevrimdışı sensör | **Yapıldı.** `sensor_offline` (409) teklifte ve onayda; 45 sn eşiği; arayüzde çevrimdışı seçenekler kapalı ve uyarı |
+| A2 süpürme | **Yapıldı.** Dakikada bir Celery görevi `sweep_response_actions_task` |
+| A3 `dispatched` | **Yapıldı.** Migrasyon 019 (`dispatched_at`, `failure_code`); sonuç gelmezse 5 dk sonra `failed (timeout)` |
+| A4 onayda yeniden denetim | **Yapıldı** |
+| A5 denetleyici durumu sunucuya | **Yapılmadı.** Eylemi sensör işlemi uygular; denetleyici yalnızca başlat/durdur içindir. Değeri düşük bulundu |
+| A6 yapısal hata kodu | **Kısmen:** `failure_code` (`timeout`, `not_delivered`); sensörden gelen serbest metin aynen duruyor |
+| A7 | Düzeltme notu yukarıda; arayüzde anlık çevrimiçi/çevrimdışı rozeti eklendi |
+| Ek güvenlik bulgusu | Zaman aşımına uğrayan eylem aslında uygulanmış olabilir; bu yüzden `failed (timeout)` ve `dispatched` durumları da "Şimdi kaldır" ile geri alınabilir (sensöre kaldırma emri gider) |
+| B1 hız sınırı | **Yapıldı.** Oturum başına, adres başına ve ağır çağrılar (yükleme, denetim dışa aktarma) için; Redis yoksa süreç içi sayaç, Redis erişilemezse engellemez; geliştirmede kapalı. nginx `limit_req` eklenmedi (B5) |
+| B2 sensör kimliği | **Yapılmadı** (ayrı onay gerektiriyordu) |
+| B3 denetleyici belirteci | **Yapılmadı.** Tarayıcıya belirteci güvenle iletmek bir eşleştirme arayüzü gerektirir; tasarım kararı bekliyor |
+| B6 yetki bütünlük testi | **Yapıldı** (`test_api_hardening.py`): açık liste dışında kimlik bağımlılığı olmayan rota testi bozar |
+| B7 | **Kısmen:** denetim dışa aktarımı kaydediliyor; syslog/webhook itme yapılmadı |
+| C1–C3 | Kayıt ve kimlik bilgisi indirme zaten vardı; çevrimiçi rozeti ve 15 sn yenileme eklendi. Kurulum paketinin arayüzden indirilmesi yapılmadı |
+| D1 kuyruk sınırı | **Yapıldı** (2000 dosya, 500 MB; en eski atılır) |
+| D2 geri çekilme | **Yapıldı** (kalp atışı ve yükleme için üstel + rastgelelik). **Döngüye bağlantı yalnızca elle okunarak ve derlenerek doğrulandı; ana döngü için otomatik test yok** |
+| D3 atomik yazım | **Yapıldı** |
+| D4 zehirli dosya | **Yapıldı** (`bad-*` olarak kenara alınır, sonrakiler gönderilir) |
+| D5, D6 | **Yapılmadı / incelenmedi** |
+| E1 | Çevrimdışı, zaman aşımı, süpürme, kuyruk sınırı, atomiklik, karantina, backoff testleri yazıldı |
+| 5. aşama taraması | `pip-audit` (requirements.lock) ve `npm audit` (üretim ve geliştirme): **bilinen zafiyet yok** (tarama anındaki veri tabanına göre). Girdi doğrulama, imaj sertleştirme, bulut sırları: **yapılmadı** |
