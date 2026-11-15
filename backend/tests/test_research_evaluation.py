@@ -380,3 +380,14 @@ def test_cicids_timestamps_are_parsed_day_first_with_the_afternoon_fixed() -> No
     assert cic.parse("53:44.4") is None and cic.parse("not a time") is None
     assert cic.parse("31/02/2017 10:00:00") is None  # impossible date
     assert cic.parse("3/7/2017 9:00") < cic.parse("3/7/2017 3:00")  # 09:00 comes before 15:00
+
+
+def test_cicids_direction_candidates_keep_only_service_like_ports() -> None:
+    import run_cicids_parquet as cic
+
+    assert cic.CANDIDATES[0] == "none"  # the unprocessed baseline comes first (the selection rule relies on it)
+    assert cic.keep_flow("none", 60000) and cic.keep_flow("none", None)
+    assert cic.keep_flow("below1024", 443) and not cic.keep_flow("below1024", 1024)
+    assert cic.keep_flow("below32768", 8080) and not cic.keep_flow("below32768", 32768)
+    assert cic.keep_flow("below49152", 40000) and not cic.keep_flow("below49152", 49152)
+    assert not cic.keep_flow("below1024", None)  # a flow without a port cannot be called a service flow
