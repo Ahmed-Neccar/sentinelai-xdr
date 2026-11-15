@@ -898,6 +898,35 @@ class PasswordChangeIn(BaseModel):
     new_password: str = Field(min_length=1, max_length=256)
 
 
+@router.post("/verify-password")
+def verify_own_password(
+    payload: MFAEnrollIn,
+    request: Request,
+    db: DbDep,
+    user: Annotated[TokenUser, Depends(get_current_user)],
+) -> dict:
+    """Check the signed-in person's own password without changing anything.
+
+    The password dialogs call this first, so a wrong password is caught before the person
+    chooses a new one. It shares nothing with sign-in except the password check, and it is
+    throttled per account like the other password-confirmation steps.
+    """
+    enforce_auth_rate_limit(f"password-verify:{user.organization_id}:{user.id}", limit=8)
+    account = db.get(User, user.id)
+    if account is None or not verify_password(payload.current_password, account.hashed_password):
+        write_audit(
+            db,
+            actor_id=user.id,
+            action="auth.password_verify_failed",
+            target_type="user",
+            target_id=str(user.id),
+            ip_address=client_ip(request),
+        )
+        db.commit()
+        raise AppError(401, "invalid_credentials", "Current password is incorrect")
+    return {"ok": True}
+
+
 @router.post("/password", response_model=TokenResponse)
 def change_own_password(
     payload: PasswordChangeIn,

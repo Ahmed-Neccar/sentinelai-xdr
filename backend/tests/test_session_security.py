@@ -219,3 +219,45 @@ def test_new_accounts_follow_the_password_policy(tenant) -> None:
         },
     )
     assert response.status_code == 400
+
+
+# --- checking the password before the dialog moves on --------------------------------------
+
+
+def test_the_password_can_be_checked_without_changing_anything(tenant) -> None:
+    client = tenant.client
+    headers = _bearer(_login(tenant, tenant.emails["analyst"]))
+    wrong = client.post(
+        "/api/v1/auth/verify-password", headers=headers, json={"current_password": "wrong-pass-12"}
+    )
+    assert wrong.status_code == 401
+    assert wrong.json()["error"]["code"] == "invalid_credentials"
+    right = client.post(
+        "/api/v1/auth/verify-password", headers=headers, json={"current_password": PASSWORD}
+    )
+    assert right.status_code == 200 and right.json() == {"ok": True}
+    # Still the same password and the same session.
+    assert client.get("/api/v1/auth/me", headers=headers).status_code == 200
+    assert _login(tenant, tenant.emails["analyst"]).status_code == 200
+
+
+def test_checking_the_password_needs_a_session_and_is_throttled(tenant) -> None:
+    from app.core import auth_rate_limit
+
+    client = tenant.client
+    assert (
+        client.post("/api/v1/auth/verify-password", json={"current_password": PASSWORD}).status_code
+        == 401
+    )
+    auth_rate_limit._local.clear()
+    headers = _bearer(_login(tenant, tenant.emails["analyst"]))
+    codes = [
+        client.post(
+            "/api/v1/auth/verify-password",
+            headers=headers,
+            json={"current_password": "nope-nope-12"},
+        ).status_code
+        for _ in range(10)
+    ]
+    assert codes[:8] == [401] * 8
+    assert 429 in codes[8:]

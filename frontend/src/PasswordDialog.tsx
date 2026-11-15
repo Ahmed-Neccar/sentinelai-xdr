@@ -7,8 +7,8 @@ import { passwordProblem } from './ChangePassword'
  * Two-step password change opened from the Users page.
  * Step 1 asks for the signed-in person's own password; step 2 sets the new one.
  * `self` changes the person's own password (POST /auth/password), otherwise an administrator
- * resets someone else's (PATCH /users/{id}). The server checks the password when step 2 is
- * sent, so a wrong password sends the person back to step 1.
+ * resets someone else's (PATCH /users/{id}). Step 1 checks the password with the server
+ * (POST /auth/verify-password); step 2 sends it again with the new one.
  */
 export default function PasswordDialog({
   language,
@@ -45,11 +45,21 @@ export default function PasswordDialog({
     return () => window.removeEventListener('keydown', onKey)
   }, [busy, onClose])
 
-  function goNext(event: FormEvent) {
+  async function goNext(event: FormEvent) {
     event.preventDefault()
-    if (!own) return
+    if (!own || busy) return
+    setBusy(true)
     setError('')
-    setStep(2)
+    try {
+      // The server checks the password now, so a wrong one is refused before step 2.
+      await apiRequest('/auth/verify-password', { method: 'POST', body: JSON.stringify({ current_password: own }) })
+      setStep(2)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Unable to check the password')
+      setOwn('')
+    } finally {
+      setBusy(false)
+    }
   }
 
   async function save(event: FormEvent) {
@@ -99,7 +109,7 @@ export default function PasswordDialog({
             {error && <p className="field-error" role="alert">{t(error)}</p>}
             <div className="dialog-actions">
               <button type="button" className="secondary" onClick={onClose}>{t('Cancel')}</button>
-              <button type="submit" className="primary" disabled={!own}>{t('Continue')}</button>
+              <button type="submit" className="primary" disabled={!own || busy}>{busy ? t('Checking…') : t('Continue')}</button>
             </div>
           </form>
         ) : (

@@ -313,6 +313,7 @@ const tr: Record<string, string> = {
   'The password repeats too few different characters':'Parola çok az farklı karakter içeriyor','Mix letters with digits or symbols':'Harfleri rakam veya simgelerle birlikte kullanın',
   'That password is too easy to guess':'Bu parola tahmin etmek için fazla kolay','The password must not contain the account name':'Parola hesap adını içermemeli',
   'Current password is incorrect':'Mevcut parola yanlış','Confirm with your own password to set a password':'Parola belirlemek için kendi parolanızla doğrulayın',
+  'Checking…':'Denetleniyor…','Unable to check the password':'Parola denetlenemedi',
 }
 
 export function translate(text: string, language: Language): string {

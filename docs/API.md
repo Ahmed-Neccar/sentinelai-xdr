@@ -47,6 +47,7 @@ Interactive docs in Compose: `http://127.0.0.1:8001/docs` (OpenAPI). For a host-
 |--------|------|------|-------|
 | POST | `/auth/login` | none | organization slug + email/password; returns access token or a five-minute MFA challenge |
 | POST | `/auth/refresh` | refresh cookie or body | rotates the refresh token and issues an access token; refused with `session_expired` once the sign-in is older than `SESSION_MAX_HOURS` |
+| POST | `/auth/verify-password` | user | check the caller's own password (`current_password`) without changing anything; 401 `invalid_credentials` if wrong |
 | POST | `/auth/password` | user | change the caller's own password; needs `current_password`, applies the password policy, ends every other session and returns fresh tokens for this one |
 | POST | `/auth/logout` | user | invalidates refresh family |
 | GET | `/auth/me` | user | current user + roles |
