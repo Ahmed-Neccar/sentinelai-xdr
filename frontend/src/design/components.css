@@ -100,7 +100,8 @@ html[data-theme="light"] .raw pre{background:#F3F4FB}
 .bento-metric.warn svg{color:var(--prism-warn)}.bento-metric.ok svg{color:var(--prism-ok)}.bento-metric.info svg{color:var(--prism-info)}
 .bento-metric small{color:var(--prism-muted);font-size:13px}
 .bento-metric strong{font:700 38px/1.1 var(--prism-font);letter-spacing:-1.2px}
-.bento-metric span{color:var(--prism-faint);font-size:12px}
+.bento-metric>span{color:var(--prism-faint);font-size:12px}
+.bento-metric .count-up{color:inherit;font-size:inherit}
 .bento-link{position:absolute;inset:0;background:none;border:0;border-radius:inherit;cursor:pointer}
 .bento-findings{grid-column:span 7}
 .bento-sensors{grid-column:span 5}
