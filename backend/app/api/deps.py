@@ -13,7 +13,7 @@ from app.core.errors import AppError
 from app.core.permissions import has_any
 from app.core.security import decode_token
 from app.db.session import get_db, set_organization_context
-from app.models import User, UserRole
+from app.models import RefreshToken, User, UserRole
 from app.schemas.common import TokenUser
 
 bearer = HTTPBearer(auto_error=False)
@@ -48,6 +48,25 @@ def get_current_user(
         raise AppError(401, "unauthenticated", "User not found or inactive")
     if int(payload.get("tv", -1)) != user.token_version:
         raise AppError(401, "token_revoked", "Token has been revoked")
+    session_id = payload.get("sid")
+    if session_id:
+        # A session ended from the sessions list stops working at once, not when the
+        # access token runs out. Tokens issued before sessions were tracked have no sid.
+        try:
+            parsed_session = UUID(str(session_id))
+        except ValueError as exc:
+            raise AppError(401, "invalid_token", "Invalid access token") from exc
+        alive = db.scalar(
+            select(RefreshToken.id)
+            .where(
+                RefreshToken.session_id == parsed_session,
+                RefreshToken.user_id == user.id,
+                RefreshToken.revoked.is_(False),
+            )
+            .limit(1)
+        )
+        if alive is None:
+            raise AppError(401, "token_revoked", "This session was ended")
     roles = [link.role.name for link in user.roles if link.role is not None]
     return TokenUser(
         id=user.id,

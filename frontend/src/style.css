@@ -133,3 +133,6 @@ form.preferences>.primary{margin:0 22px 22px}
 .identity-empty{padding:4px 22px 8px;color:var(--muted,#91a0ad);font-size:13px}
 .token-once{display:grid;gap:10px;padding:14px;border:1px solid #8a7a3a;border-radius:8px;background:#2a2512}.token-once code{overflow-wrap:anywhere;font-size:12px;color:#f3e6a8}.token-once .secondary{justify-self:start}
 .panel h3{margin:0;font-size:14px}
+.session-actions{padding:6px 22px 20px}
+.integrity{max-width:none}.integrity .panel-head{align-items:flex-start;gap:16px;flex-wrap:wrap}.integrity-actions{display:flex;gap:8px;flex-wrap:wrap}.integrity-head{display:block;margin-top:8px;color:var(--muted,#91a0ad);font-size:12px;line-height:1.5}.integrity-head code{font-size:12px}
+.integrity.ok h2{color:#62dcc3}.integrity.broken{border-color:#e0707a}.integrity.broken h2{color:#ff9aa3}

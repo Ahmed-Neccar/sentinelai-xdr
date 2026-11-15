@@ -136,16 +136,19 @@ def _issue_tokens(
     recovery_codes: list[str] | None = None,
     action: str = "auth.login",
     session_started_at: datetime | None = None,
+    session_id: UUID | None = None,
 ) -> TokenResponse:
     from app.core.config import settings
 
     roles = _roles(user)
+    session_id = session_id or uuid4()
     access = create_access_token(
         user_id=user.id,
         organization_id=user.organization_id,
         roles=roles,
         token_version=user.token_version,
         auth_methods=auth_methods,
+        session_id=session_id,
     )
     refresh, expires_at = create_refresh_token(
         user_id=user.id,
@@ -153,6 +156,7 @@ def _issue_tokens(
         token_version=user.token_version,
         auth_methods=auth_methods,
         session_started_at=session_started_at,
+        session_id=session_id,
     )
     db.add(
         RefreshToken(
@@ -160,6 +164,9 @@ def _issue_tokens(
             organization_id=user.organization_id,
             token_hash=_hash_token(refresh),
             expires_at=expires_at,
+            session_id=session_id,
+            ip_address=client_ip(request),
+            user_agent=(request.headers.get("user-agent") or "")[:300] or None,
         )
     )
     write_audit(
@@ -664,6 +671,7 @@ def refresh_token(request: Request, response: Response, db: DbDep) -> TokenRespo
         auth_methods=auth_methods,
         action="auth.refresh",
         session_started_at=session_started,
+        session_id=stored.session_id,
     )
 
 
@@ -1011,6 +1019,110 @@ def change_own_password(
         auth_methods=list(user.auth_methods) or ["pwd"],
         action="auth.password_changed",
     )
+
+
+def _current_session_id(request: Request) -> UUID | None:
+    token = request.cookies.get("refresh_token")
+    if not token:
+        return None
+    try:
+        return UUID(str(decode_token(token).get("sid")))
+    except Exception:  # noqa: BLE001 - no usable cookie simply means no current session.
+        return None
+
+
+@router.get("/sessions")
+def list_sessions(
+    request: Request, db: DbDep, user: Annotated[TokenUser, Depends(get_current_user)]
+) -> dict:
+    """The signed-in person's own sessions: one entry per sign-in that can still be renewed."""
+    now = datetime.now(UTC)
+    current = _current_session_id(request)
+    rows = db.scalars(
+        select(RefreshToken)
+        .where(
+            RefreshToken.user_id == user.id,
+            RefreshToken.revoked.is_(False),
+            RefreshToken.expires_at > now,
+            RefreshToken.session_id.is_not(None),
+        )
+        .order_by(RefreshToken.created_at.desc())
+    ).all()
+    seen: set[UUID] = set()
+    items = []
+    for row in rows:
+        if row.session_id is None or row.session_id in seen:
+            continue
+        seen.add(row.session_id)
+        items.append(
+            {
+                "id": row.session_id,
+                "ip_address": row.ip_address,
+                "user_agent": row.user_agent,
+                "last_active": row.created_at,
+                "expires_at": row.expires_at,
+                "current": row.session_id == current,
+            }
+        )
+    return {"items": items}
+
+
+@router.delete("/sessions/{session_id}")
+def end_session(
+    session_id: UUID,
+    request: Request,
+    db: DbDep,
+    user: Annotated[TokenUser, Depends(get_current_user)],
+) -> dict:
+    rows = list(
+        db.scalars(
+            select(RefreshToken).where(
+                RefreshToken.user_id == user.id, RefreshToken.session_id == session_id
+            )
+        )
+    )
+    if not rows:
+        raise AppError(404, "not_found", "Session not found")
+    for row in rows:
+        row.revoked = True
+    write_audit(
+        db,
+        actor_id=user.id,
+        action="auth.session_ended",
+        target_type="user",
+        target_id=str(user.id),
+        ip_address=client_ip(request),
+    )
+    db.commit()
+    return {"ok": True}
+
+
+@router.post("/sessions/end-others")
+def end_other_sessions(
+    request: Request, db: DbDep, user: Annotated[TokenUser, Depends(get_current_user)]
+) -> dict:
+    keep = _current_session_id(request)
+    ended = 0
+    for row in db.scalars(
+        select(RefreshToken).where(
+            RefreshToken.user_id == user.id, RefreshToken.revoked.is_(False)
+        )
+    ):
+        if keep is not None and row.session_id == keep:
+            continue
+        row.revoked = True
+        ended += 1
+    write_audit(
+        db,
+        actor_id=user.id,
+        action="auth.other_sessions_ended",
+        target_type="user",
+        target_id=str(user.id),
+        ip_address=client_ip(request),
+        details={"ended": ended},
+    )
+    db.commit()
+    return {"ok": True, "ended": ended}
 
 
 @router.post("/logout")

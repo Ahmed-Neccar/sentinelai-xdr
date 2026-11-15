@@ -261,3 +261,66 @@ def test_checking_the_password_needs_a_session_and_is_throttled(tenant) -> None:
     ]
     assert codes[:8] == [401] * 8
     assert 429 in codes[8:]
+
+
+# --- the person's own session list ----------------------------------------------------------
+
+
+def test_a_person_sees_their_sessions_and_can_end_another_one(tenant) -> None:
+    client = tenant.client
+    email = tenant.emails["analyst"]
+    other = _login(tenant, email)
+    other_cookie = other.cookies.get("refresh_token")
+    mine = _login(tenant, email)
+    headers = _bearer(mine)
+    listing = client.get("/api/v1/auth/sessions", headers=headers).json()["items"]
+    assert len(listing) >= 2
+    current = [s for s in listing if s["current"]]
+    assert len(current) == 1
+    elsewhere = next(s for s in listing if not s["current"])
+
+    # Ending the other session stops its access token at once, not 15 minutes later.
+    assert client.get("/api/v1/auth/me", headers=_bearer(other)).status_code == 200
+    ended = client.delete(f"/api/v1/auth/sessions/{elsewhere['id']}", headers=headers)
+    assert ended.status_code == 200
+    assert client.get("/api/v1/auth/me", headers=_bearer(other)).status_code == 401
+    _use_cookie(client, other_cookie)
+    assert client.post("/api/v1/auth/refresh").status_code == 401
+    # The caller's own session is untouched.
+    _use_cookie(client, mine.cookies.get("refresh_token"))
+    assert client.get("/api/v1/auth/me", headers=headers).status_code == 200
+
+
+def test_ending_all_other_sessions_keeps_this_one(tenant) -> None:
+    client = tenant.client
+    email = tenant.emails["analyst"]
+    others = [_login(tenant, email) for _ in range(2)]
+    mine = _login(tenant, email)
+    headers = _bearer(mine)
+    result = client.post("/api/v1/auth/sessions/end-others", headers=headers)
+    assert result.status_code == 200 and result.json()["ended"] >= 2
+    for other in others:
+        assert client.get("/api/v1/auth/me", headers=_bearer(other)).status_code == 401
+    assert client.get("/api/v1/auth/me", headers=headers).status_code == 200
+
+
+def test_nobody_can_end_someone_elses_session(tenant) -> None:
+    client = tenant.client
+    victim = _login(tenant, tenant.emails["auditor"])
+    victim_session = client.get("/api/v1/auth/sessions", headers=_bearer(victim)).json()["items"][0]
+    attacker = _bearer(_login(tenant, tenant.emails["analyst"]))
+    assert (
+        client.delete(f"/api/v1/auth/sessions/{victim_session['id']}", headers=attacker).status_code
+        == 404
+    )
+    assert client.get("/api/v1/auth/me", headers=_bearer(victim)).status_code == 200
+
+
+def test_a_rotated_session_keeps_the_same_id(tenant) -> None:
+    client = tenant.client
+    login = _login(tenant, tenant.emails["analyst"])
+    before = client.get("/api/v1/auth/sessions", headers=_bearer(login)).json()["items"]
+    _use_cookie(client, login.cookies.get("refresh_token"))
+    rotated = client.post("/api/v1/auth/refresh")
+    after = client.get("/api/v1/auth/sessions", headers=_bearer(rotated)).json()["items"]
+    assert {s["id"] for s in before} <= {s["id"] for s in after}

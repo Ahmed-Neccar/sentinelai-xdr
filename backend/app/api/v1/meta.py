@@ -7,7 +7,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 
 from app.api.deps import DbDep, require_roles
 from app.core.config import settings
@@ -200,6 +200,73 @@ def audit_logs(db: DbDep, _: Auditor, page: int = 1, page_size: int = 20) -> Pag
         for a in rows
     ]
     return Page(items=items, page=page, page_size=page_size, total=total)
+
+
+@router.get("/audit-logs/integrity")
+def audit_integrity(db: DbDep, _: Auditor) -> dict:
+    """Check the organization's audit chain.
+
+    Every row carries a hash over its own fields and the previous row's hash. A row edited
+    after the fact, or a row removed from the middle, no longer matches. The oldest remaining
+    row is taken as the start, because retention removes old history. Removing the newest
+    rows cannot be seen from the database alone: compare `head_hash` with a copy kept outside
+    (the export includes it).
+    """
+    rows = db.execute(
+        text(
+            """
+            SELECT seq, prev_hash, row_hash,
+                   audit_row_hash(prev_hash, id, actor_id, action, target_type, target_id,
+                                  ip_address, details, created_at) AS expected,
+                   lag(row_hash) OVER (ORDER BY seq) AS before
+            FROM audit_logs ORDER BY seq
+            """
+        )
+    ).all()
+    broken: list[int] = []
+    for index, row in enumerate(rows):
+        links = index == 0 or row.prev_hash == row.before
+        if row.row_hash != row.expected or not links:
+            broken.append(row.seq)
+    return {
+        "ok": not broken,
+        "checked": len(rows),
+        "first_seq": rows[0].seq if rows else None,
+        "last_seq": rows[-1].seq if rows else None,
+        "head_hash": rows[-1].row_hash if rows else None,
+        "broken_at": broken[:20],
+    }
+
+
+@router.get("/audit-logs/export")
+def audit_export(
+    db: DbDep, _: Auditor, after_seq: int = 0, limit: int = 1000
+) -> dict:
+    """Audit rows in chain order for a SIEM collector: call again with `next_seq` to continue."""
+    limit = min(max(limit, 1), 5000)
+    rows = db.scalars(
+        select(AuditLog).where(AuditLog.seq > after_seq).order_by(AuditLog.seq).limit(limit)
+    ).all()
+    return {
+        "items": [
+            {
+                "seq": a.seq,
+                "id": a.id,
+                "time": a.created_at,
+                "actor_id": a.actor_id,
+                "action": a.action,
+                "target_type": a.target_type,
+                "target_id": a.target_id,
+                "ip_address": a.ip_address,
+                "details": a.details,
+                "prev_hash": a.prev_hash,
+                "row_hash": a.row_hash,
+            }
+            for a in rows
+        ],
+        "next_seq": rows[-1].seq if rows else after_seq,
+        "has_more": len(rows) == limit,
+    }
 
 
 SIGN_IN_FAILURE_ACTIONS = ("auth.login_failed", "auth.sso_failed", "auth.sso_identity_mismatch")

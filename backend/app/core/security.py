@@ -36,6 +36,7 @@ def create_access_token(
     roles: list[str],
     token_version: int,
     auth_methods: list[str] | None = None,
+    session_id: UUID | None = None,
 ) -> str:
     now = datetime.now(UTC)
     payload = {
@@ -45,6 +46,7 @@ def create_access_token(
         "tv": token_version,
         "amr": auth_methods or ["pwd"],
         "type": "access",
+        **({"sid": str(session_id)} if session_id else {}),
         "iat": int(now.timestamp()),
         "exp": int((now + timedelta(minutes=settings.access_token_minutes)).timestamp()),
         "jti": str(uuid4()),
@@ -59,6 +61,7 @@ def create_refresh_token(
     token_version: int,
     auth_methods: list[str] | None = None,
     session_started_at: datetime | None = None,
+    session_id: UUID | None = None,
 ) -> tuple[str, datetime]:
     """Create a refresh token whose life never reaches past the session's absolute limit.
 
@@ -78,6 +81,7 @@ def create_refresh_token(
         "amr": auth_methods or ["pwd"],
         "type": "refresh",
         "sat": int(started.timestamp()),
+        **({"sid": str(session_id)} if session_id else {}),
         "iat": int(now.timestamp()),
         "exp": int(exp.timestamp()),
         "jti": str(uuid4()),

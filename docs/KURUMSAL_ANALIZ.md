@@ -47,9 +47,9 @@ beklentisidir.
 | Gruptan role eşleme | Şart | **Var (bu oturumda eklendi):** groups/roles claim → rol, her girişte eşitleme, son yönetici korunur |
 | İlk girişte hesap açma (JIT) | Sık | **Var (bu oturumda eklendi),** varsayılan kapalı; yalnızca eşlenmiş rolle |
 | Oturum süresi | Mutlak limit + boşta zaman aşımı | **Var (bu oturumda eklendi):** 12 saat mutlak, 30 dk boşta (arayüz) |
-| Oturum listesi / uzaktan sonlandırma | Beklenir | **Kısmi:** yönetici "her yerden çıkış yaptır" var; kişinin kendi cihaz listesi yok |
+| Oturum listesi / uzaktan sonlandırma | Beklenir | **Var (sonradan eklendi):** kişi kendi oturumlarını görür, birini veya diğerlerini anında sonlandırır; yönetici de bir hesabı her yerden çıkarır |
 | Parola politikası | Uzunluk, yaygın parola, geçmiş | **Kısmi:** uzunluk, yaygın sözcük, hesap adı. Sızıntı listesi (HIBP) ve parola geçmişi yok |
-| Hesap kilitleme | Beklenir | **Kısmi:** hız sınırı (adres ve hesap başına) var; kalıcı kilit ve yönetici bildirimi yok |
+| Hesap kilitleme | Beklenir | **Kısmi, bilinçli:** hız sınırı (adres ve hesap başına) ve başarısız giriş panosu var. Kalıcı kilit bilerek eklenmedi: saldırgana, kurbanı sürekli yanlış parolayla kilitleyip hizmet dışı bırakma imkânı verir |
 | API anahtarları / servis hesapları | Beklenir | **Kısmi:** sensör hesapları var; kapsamlı, süreli API anahtarı yok |
 | IP / ağ kısıtlaması | Sık | **Yok** |
 
@@ -66,7 +66,7 @@ beklentisidir.
 | Konu | Beklenti | SentinelAI |
 |---|---|---|
 | Yönetici eylemleri kaydı | Şart | **Var:** denetim günlüğü; yeni kimlik eylemleri de yazılıyor |
-| Değiştirilemezlik / dışa akıtma | Beklenir | **Kısmi:** günlük DB'de; imzalama, syslog/SIEM'e akıtma yok |
+| Değiştirilemezlik / dışa akıtma | Beklenir | **Büyük ölçüde var (sonradan eklendi):** her kayıt bir öncekinin özetine bağlı (zincir), veritabanı tetikleyicisiyle; değiştirme reddedilir, ortadan silme zincir kontrolünde görünür; SIEM için sayfalı dışa aktarma. **Sınır:** en yeni kayıtların silinmesi veritabanından anlaşılamaz (özetin dışarıda kopyası gerekir), veritabanı yöneticisi tetikleyiciyi kapatabilir; syslog ile anlık itme yok, çekme (pull) var |
 | Uyumluluk raporları (ISO 27001, SOC 2, KVKK eşlemesi) | Satışta sorulur | **Yok** |
 | Veri saklama politikası | Şart | **Var** (yükleme dosyaları ve olaylar için gün bazlı) |
 
@@ -108,8 +108,8 @@ denetimi, ekran okuyucu testi, açık ve yüksek kontrast tema taraması.
 1. **Güvenlik doğrulaması:** Bağımsız sızma testi ve bağımlılık taraması raporu. Kurumsal alıcı
    ilk bunu ister. Kendi başına yapılamaz; dış kaynak gerekir.
 2. **SAML desteği** ve Okta/Google ile gerçek denemeler (şimdilik yalnızca Entra denendi).
-3. **Denetim günlüğünün dışarı akıtılması** (syslog / webhook) ve değiştirilemezlik (hash zinciri).
-4. **Kişinin kendi oturum listesi** ve "diğer cihazlardan çık" düğmesi.
+3. **Denetim günlüğünün anlık itilmesi** (syslog / webhook) ve özetin dış bir kasaya yazılması (çekme ve zincir hazır).
+4. ~~Kişinin kendi oturum listesi~~ (yapıldı).
 5. **Linux sensörü** ve ajan güncelleme mekanizması.
 6. **Yüksek erişilebilirlik ve ölçek ölçümü** (en az bir gerçekçi yük testi sonucu).
 7. **Uyumluluk eşleme belgeleri** (ISO 27001 / KVKK madde eşlemesi) ve veri işleme belgesi.

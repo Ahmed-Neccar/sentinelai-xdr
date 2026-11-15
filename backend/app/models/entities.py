@@ -2,6 +2,7 @@ from datetime import datetime
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     DateTime,
     ForeignKey,
@@ -123,6 +124,10 @@ class RefreshToken(TenantOwned, Base):
     token_hash: Mapped[str] = mapped_column(String(128), unique=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     revoked: Mapped[bool] = mapped_column(Boolean, default=False)
+    # One sign-in is one session however often its token is rotated.
+    session_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), index=True)
+    ip_address: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    user_agent: Mapped[str | None] = mapped_column(String(300), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -576,6 +581,13 @@ class AuditLog(TenantOwned, Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), index=True
     )
+    # Filled by database triggers (migration 017): the position in the organization's chain
+    # and the hashes that link a row to the one before it.
+    seq: Mapped[int] = mapped_column(
+        BigInteger, server_default=text("nextval('audit_logs_seq_seq')"), unique=True
+    )
+    prev_hash: Mapped[str | None] = mapped_column(Text, nullable=True)
+    row_hash: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class SystemSetting(TenantOwned, Base):

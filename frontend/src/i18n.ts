@@ -333,6 +333,12 @@ const tr: Record<string, string> = {
   'NAME':'AD','LAST USED':'SON KULLANIM','No tokens yet.':'Henüz jeton yok.','Token name':'Jeton adı','For example: Microsoft Entra':'Örnek: Microsoft Entra','Create token':'Jeton oluştur',
   'Revoke this token? The identity provider will stop being able to create or change accounts.':'Bu jeton iptal edilsin mi? Kimlik sağlayıcı artık hesap açıp değiştiremez.',
   'Sign out everywhere':'Her yerden çıkış yaptır','End every session of this account now? The person must sign in again.':'Bu hesabın tüm oturumları şimdi sonlandırılsın mı? Kişi yeniden giriş yapmalı.','Signed out everywhere:':'Her yerden çıkış yaptırıldı:',
+  'Where you are signed in':'Oturum açtığınız yerler','End any session you do not recognise. It stops working immediately.':'Tanımadığınız oturumları sonlandırın. Oturum anında çalışmaz hale gelir.',
+  'DEVICE':'CİHAZ','LAST ACTIVE':'SON ETKİNLİK','This device':'Bu cihaz','End session':'Oturumu sonlandır','Sign out all other devices':'Diğer tüm cihazlardan çıkış yap',
+  'Audit log intact':'Denetim günlüğü bozulmamış','Audit log has been tampered with':'Denetim günlüğünde değişiklik tespit edildi',
+  'records checked; every record is linked to the one before it.':'kayıt denetlendi; her kayıt bir öncekine bağlı.','Records no longer match their chain at positions':'Şu sıralardaki kayıtlar zincirle uyuşmuyor',
+  'Latest hash':'Son özet','Keep a copy outside the server to also detect removed latest records.':'En son kayıtların silindiğini de anlamak için bunun bir kopyasını sunucu dışında saklayın.',
+  'Check again':'Yeniden denetle','Download for a SIEM':'SIEM için indir',
 }
 
 export function translate(text: string, language: Language): string {
