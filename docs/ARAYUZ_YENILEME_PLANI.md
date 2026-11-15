@@ -1,6 +1,6 @@
 # Arayüz yenileme planı: "Crimson Prism" SOC komuta merkezi
 
-Tarih: 2026-11-15. Durum: **plan; onaya sunuldu, hiçbir kod yazılmadı.**
+Tarih: 2026-11-15. Durum: **onaylandı ve uygulandı (bölüm 9'a bakın).**
 Referans görsel: sizin ilettiğiniz tasarım (bento kartlar, kadran, açılır bulgu satırları, etkinlik
 akışı). Görseldeki yazılar bozuk üretilmiş; yalnızca yerleşim ve his için referans alındı.
 
@@ -151,3 +151,24 @@ build`, çeviri testi; canlıya alma her aşama sonunda **sizin onayınızla** v
    süreç ağacı alanı eklemek ayrı bir iş olarak planlansın mı?
 6. **Paket boyutu bütçesi** (≤ 90 KB gzip) kabul mü?
 7. **Aşama sırası** (0→1→2→3→4→5→6) uygun mu?
+
+## 9. Uygulama durumu (onay: "ne onay gerekiyorsa hepsini veriyorum")
+
+Kararlar, önerilen değerlerle verildi: Outfit; temalar korunur (jeton tabanlı, açık ve yüksek kontrast
+da çalışır); `#/` yönlendirici; MITRE eşlemeleri dahil; "Süreç & Ağ Akışı" mevcut olay
+özniteliklerine göre; paket bütçesi; sıra 0→6.
+
+| Madde | Durum |
+|---|---|
+| Aşama 0: tokenlar, yazı tipleri, `services/http.ts`, hash yönlendirici | **Yapıldı.** `api()` ve `sensorControl()` `App.tsx`'ten çıkarıldı (davranış aynı), yazı tipleri paketle geliyor (CSP'ye uygun), yönlendirici `#/cases` gibi |
+| Aşama 1: Bento Genel Bakış | **Yapıldı.** Risk kadranı (GSAP), CountUp ve Spotlight metrikler, kategorize bulgular (açılır), sensör sağlığı (nabız), son müdahaleler (yeni `GET /cases/responses/recent`) |
+| Aşama 2: Tespitler ve Adli Çekmece | **Yapıldı.** 4 sekme, MITRE rozetleri, kapsamlı Lenis yalnızca "Özet ve risk" okuma alanında |
+| Aşama 3: yaşam döngüsü çubuğu ve kilit | **Yapıldı.** Vaka detayında proposed→approved→dispatched→executed/failed; çevrimdışı sensör seçilince teklif düğmesi kilitlenir |
+| Aşama 4: sensör kaydı ve iptal | **Yapıldı.** Kayıt modalı (anahtar bir kez, kopyala/indir) ve iptal onay penceresi; çevrimiçi/çevrimdışı nabız |
+| Aşama 5: kalan sayfalar | **Kısmen.** Genel yüzey (kenar çubuğu, kartlar, tablolar, formlar, rozetler, giriş sayfası) yeni sistemle yeniden giydirildi; sayfaların yerleşimi ve içeriği değişmedi (bento yalnızca Genel Bakış'ta) |
+| Aşama 6: cila | **Kısmen.** Odak çerçevesi, azaltılmış hareket, odak tuzağı, 38 test; kontrast ölçümü ve ekran okuyucu denemesi yapılmadı |
+| MITRE içeriği | 9 kurala eşleme eklendi (sürümleri 2'ye yükseltildi, mevcut kurulumlar güncellenir). **Eşlemeler benim bilgimle yazıldı ve hipotez olarak ifade edildi; yayından önce bir güvenlik uzmanı gözden geçirmeli** |
+
+Ölçülen: JS 156 KB gzip (öncesi 107 KB, +49 KB), CSS 18 KB gzip (+7 KB); yazı tipleri ayrı dosyalar ve yalnızca kullanılan karakter aralıkları yüklenir.
+
+**Yapılmayanlar / bilinen eksikler:** çekmece için paylaşılabilir bağlantı (`#/detections/<id>`) yok, yalnızca sayfa düzeyi; Vaka Raporu için kapsamlı Lenis bağlanmadı (vaka penceresi eski bileşende, yalnızca bulgu çekmecesinde var); host izolasyonu için cihaz kartında kalkan kilidi animasyonu yok (cihaz kartı arayüzü yok); `App.tsx` hâlâ büyük (Overview ve DetectionDetail kaldırıldı, geri kalanı taşınmadı); Olaylar/Cihazlar/Vakalar sayfaları eski yerleşimle; kontrast oranları ölçülmedi.

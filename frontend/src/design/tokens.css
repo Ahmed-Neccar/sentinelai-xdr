@@ -1,0 +1,32 @@
+/* Crimson Prism design tokens. Every new component uses these and nothing else. */
+:root{
+  --prism-bg:#060818;
+  --prism-surface:rgba(255,255,255,.03);
+  --prism-surface-strong:rgba(255,255,255,.06);
+  --prism-border:rgba(139,92,246,.18);
+  --prism-border-strong:rgba(139,92,246,.4);
+  --prism-accent:#8B5CF6;
+  --prism-accent-2:#6366F1;
+  --prism-ok:#10B981;
+  --prism-warn:#F59E0B;
+  --prism-crit:#F43F5E;
+  --prism-info:#60A5FA;
+  --prism-text:#E8EAF6;
+  --prism-muted:#A3ABCB;
+  --prism-faint:#7B84AA;
+  --prism-radius:14px;
+  --prism-radius-sm:9px;
+  --prism-font:'Outfit Variable',Outfit,'Segoe UI Variable Display','Segoe UI',system-ui,-apple-system,Roboto,Arial,sans-serif;
+  --prism-mono:'JetBrains Mono Variable','JetBrains Mono','Cascadia Mono',Consolas,Menlo,monospace;
+  --prism-ease:cubic-bezier(.22,.8,.3,1);
+}
+
+html[data-theme="light"]{
+  --prism-bg:#F4F5FB;--prism-surface:rgba(255,255,255,.72);--prism-surface-strong:rgba(99,102,241,.08);
+  --prism-border:rgba(99,102,241,.25);--prism-border-strong:rgba(99,102,241,.55);
+  --prism-text:#1B1F3B;--prism-muted:#4B5280;--prism-faint:#6B7299;
+}
+html[data-theme="contrast"]{
+  --prism-bg:#000;--prism-surface:#050505;--prism-surface-strong:#111;
+  --prism-border:#fff;--prism-border-strong:#fff;--prism-text:#fff;--prism-muted:#fff;--prism-faint:#e5e5e5;
+}

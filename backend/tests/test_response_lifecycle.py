@@ -227,3 +227,14 @@ def test_a_timed_out_action_can_still_be_lifted_because_it_may_be_in_effect(worl
     assert lifted.json()["enforcement_status"] == "removal_pending"
     assert [a["action"] for a in world.sensor.heartbeat()] == ["unblock"]
     assert world.sensor.report(item["id"], "removed").json()["enforcement_status"] == "removed"
+
+
+def test_recent_responses_lists_executed_actions_newest_first(world) -> None:
+    first = world.propose(target="203.0.113.20").json()
+    second = world.propose(target="203.0.113.21").json()
+    listing = world.client.get("/api/v1/cases/responses/recent", headers=world.admin1)
+    assert listing.status_code == 200
+    ids = [item["id"] for item in listing.json()["items"]]
+    assert ids[:2] == [second["id"], first["id"]]
+    assert listing.json()["items"][0]["case_id"] == world.case_id
+    assert world.client.get("/api/v1/cases/responses/recent").status_code == 401

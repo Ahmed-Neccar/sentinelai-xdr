@@ -161,6 +161,7 @@ The UI's “recent data” indicator is computed from the last event timestamp; 
 |--------|------|------|
 | GET | `/cases` | analyst+ / auditor |
 | GET | `/cases/assignees` | analyst+ / auditor; returns active analyst/administrator identity fields for assignment controls |
+| GET | `/cases/responses/recent` | administrator, analyst, auditor | the latest 10 executed response actions across all cases (Overview page) |
 | POST | `/cases` | analyst, administrator |
 | GET | `/cases/{id}` | analyst+ / auditor |
 | PATCH | `/cases/{id}` | analyst, administrator |

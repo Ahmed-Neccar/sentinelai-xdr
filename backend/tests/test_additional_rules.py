@@ -61,3 +61,24 @@ def test_office_family_rules_match_their_own_parent_only() -> None:
         assert len(evaluate_rule(spec, [_event("process.start", **attributes)])) == 1
         other = {**attributes, "parent_process_name": r"C:\Windows\explorer.exe"}
         assert evaluate_rule(spec, [_event("process.start", **other)]) == []
+
+
+def test_every_declared_attack_mapping_is_well_formed_and_hedged() -> None:
+    import re
+
+    from app.detection.builtin_rules import BUILTIN_RULES
+
+    declared = [(spec["rule_id"], item) for spec in BUILTIN_RULES for item in spec.get("mitre", [])]
+    assert len(declared) >= 10
+    for rule_id, item in declared:
+        assert re.fullmatch(r"T\d{4}(\.\d{3})?", item["technique_id"]), rule_id
+        assert item["tactic"] and len(item["justification"]) > 30, rule_id
+
+
+
+def test_a_rule_with_a_new_mapping_has_a_higher_version_so_existing_installs_receive_it() -> None:
+    from app.detection.builtin_rules import BUILTIN_RULES
+
+    for spec in BUILTIN_RULES:
+        if spec["rule_id"] == "windows_security_log_cleared":
+            assert spec["version"] >= 2 and spec["mitre"]

@@ -106,6 +106,18 @@ def list_cases(
     return Page(items=[_case(c) for c in rows], page=page, page_size=page_size, total=total)
 
 
+@router.get("/responses/recent")
+def recent_responses(db: DbDep, actor: Reader) -> dict:
+    """The latest executed response actions across all cases, newest first (Overview page)."""
+    rows = db.scalars(
+        select(ResponseSimulation)
+        .where(ResponseSimulation.action_type.in_(list(EXECUTED_ACTIONS)))
+        .order_by(ResponseSimulation.created_at.desc())
+        .limit(10)
+    ).all()
+    return {"items": [{**_response_simulation(item), "case_id": item.case_id} for item in rows]}
+
+
 @router.get("/pending-approvals")
 def pending_approvals(db: DbDep, actor: Reader) -> dict:
     """Response proposals still waiting for a decision, for the panel's reminder."""

@@ -38,7 +38,7 @@ BUILTIN_RULES: list[dict] = [
             "change window, and host context."
         ),
         "severity": "medium",
-        "version": 1,
+        "version": 2,
         "window_seconds": 300,
         "group_by": ["host_id"],
         "threshold": 1,
@@ -46,7 +46,16 @@ BUILTIN_RULES: list[dict] = [
             "event_type": "endpoint.persistence.service_install",
             "attributes.source_name": "windows.security",
         },
-        "mitre": [],
+        "mitre": [
+            {
+                "tactic": "Persistence",
+                "technique_id": "T1543.003",
+                "justification": (
+                    "A new Windows service can be a persistence mechanism; most installs "
+                    "are routine software changes."
+                ),
+            }
+        ],
     },
     {
         "rule_id": "windows_scheduled_task_created",
@@ -56,7 +65,7 @@ BUILTIN_RULES: list[dict] = [
             "not collected; review the task through authorized endpoint tooling."
         ),
         "severity": "medium",
-        "version": 1,
+        "version": 2,
         "window_seconds": 300,
         "group_by": ["host_id"],
         "threshold": 1,
@@ -64,7 +73,16 @@ BUILTIN_RULES: list[dict] = [
             "event_type": "endpoint.persistence.scheduled_task",
             "attributes.source_name": "windows.security",
         },
-        "mitre": [],
+        "mitre": [
+            {
+                "tactic": "Persistence",
+                "technique_id": "T1053.005",
+                "justification": (
+                    "A new scheduled task can run code later or at logon; most tasks are "
+                    "routine administration."
+                ),
+            }
+        ],
     },
     {
         "rule_id": "windows_scheduled_task_changed",
@@ -74,7 +92,7 @@ BUILTIN_RULES: list[dict] = [
             "and approved change context. Task XML and command content are not collected."
         ),
         "severity": "medium",
-        "version": 1,
+        "version": 2,
         "window_seconds": 300,
         "group_by": ["host_id"],
         "threshold": 1,
@@ -82,7 +100,16 @@ BUILTIN_RULES: list[dict] = [
             "event_type": "endpoint.persistence.scheduled_task_changed",
             "attributes.source_name": "windows.security",
         },
-        "mitre": [],
+        "mitre": [
+            {
+                "tactic": "Persistence",
+                "technique_id": "T1053.005",
+                "justification": (
+                    "Changing a scheduled task can redirect what it runs; most changes are "
+                    "routine administration."
+                ),
+            }
+        ],
     },
     {
         "rule_id": "windows_scheduled_task_deleted",
@@ -110,7 +137,7 @@ BUILTIN_RULES: list[dict] = [
             "approved and expected."
         ),
         "severity": "high",
-        "version": 1,
+        "version": 2,
         "window_seconds": 300,
         "group_by": ["host_id"],
         "threshold": 1,
@@ -118,7 +145,16 @@ BUILTIN_RULES: list[dict] = [
             "event_type": "endpoint.security.audit_policy_change",
             "attributes.source_name": "windows.security",
         },
-        "mitre": [],
+        "mitre": [
+            {
+                "tactic": "Defense Evasion",
+                "technique_id": "T1562.002",
+                "justification": (
+                    "Weakening audit policy can hide later activity; policy changes are "
+                    "also routine hardening."
+                ),
+            }
+        ],
     },
     {
         "rule_id": "windows_security_log_cleared",
@@ -128,7 +164,7 @@ BUILTIN_RULES: list[dict] = [
             "context, and centralized log retention."
         ),
         "severity": "high",
-        "version": 1,
+        "version": 2,
         "window_seconds": 300,
         "group_by": ["host_id"],
         "threshold": 1,
@@ -136,7 +172,16 @@ BUILTIN_RULES: list[dict] = [
             "event_type": "endpoint.security.log_cleared",
             "attributes.source_name": "windows.security",
         },
-        "mitre": [],
+        "mitre": [
+            {
+                "tactic": "Defense Evasion",
+                "technique_id": "T1070.001",
+                "justification": (
+                    "Clearing the Security log removes evidence; it is rare in normal "
+                    "operation and worth review."
+                ),
+            }
+        ],
     },
     {
         "rule_id": "windows_account_created",
@@ -146,7 +191,7 @@ BUILTIN_RULES: list[dict] = [
             "and approved provisioning activity."
         ),
         "severity": "medium",
-        "version": 1,
+        "version": 2,
         "window_seconds": 300,
         "group_by": ["host_id"],
         "threshold": 1,
@@ -154,7 +199,16 @@ BUILTIN_RULES: list[dict] = [
             "event_type": "endpoint.identity.account_created",
             "attributes.source_name": "windows.security",
         },
-        "mitre": [],
+        "mitre": [
+            {
+                "tactic": "Persistence",
+                "technique_id": "T1136.001",
+                "justification": (
+                    "A new local account can give an intruder a way back; most accounts "
+                    "are created by administrators."
+                ),
+            }
+        ],
     },
     {
         "rule_id": "windows_security_group_member_added",
@@ -216,7 +270,7 @@ BUILTIN_RULES: list[dict] = [
             "Review the actor, account, target, and approved change context."
         ),
         "severity": "medium",
-        "version": 1,
+        "version": 2,
         "window_seconds": 300,
         "group_by": ["account_id"],
         "threshold": 1,
@@ -237,7 +291,16 @@ BUILTIN_RULES: list[dict] = [
                 ],
             },
         },
-        "mitre": [],
+        "mitre": [
+            {
+                "tactic": "Persistence",
+                "technique_id": "T1098",
+                "justification": (
+                    "Changing identities or their permissions can keep or widen access; "
+                    "most changes are routine administration."
+                ),
+            }
+        ],
     },
     {
         "rule_id": "azure_role_assignment_change",
@@ -247,7 +310,7 @@ BUILTIN_RULES: list[dict] = [
             "scope, and approved change before treating it as suspicious."
         ),
         "severity": "medium",
-        "version": 1,
+        "version": 2,
         "window_seconds": 300,
         "group_by": ["subscription_id"],
         "threshold": 1,
@@ -256,7 +319,16 @@ BUILTIN_RULES: list[dict] = [
             "attributes.action": "Microsoft.Authorization/roleAssignments/write",
             "attributes.outcome": "success",
         },
-        "mitre": [],
+        "mitre": [
+            {
+                "tactic": "Privilege Escalation",
+                "technique_id": "T1098.003",
+                "justification": (
+                    "Adding a cloud role can widen access; most assignments are routine "
+                    "administration."
+                ),
+            }
+        ],
     },
     {
         "rule_id": "entra_high_risk_signin",
@@ -267,7 +339,7 @@ BUILTIN_RULES: list[dict] = [
             "Review the account, device, application, and provider context."
         ),
         "severity": "medium",
-        "version": 1,
+        "version": 2,
         "window_seconds": 300,
         "group_by": ["username"],
         "threshold": 1,
@@ -276,7 +348,16 @@ BUILTIN_RULES: list[dict] = [
             "attributes.source_name": "microsoft.entra.signin",
             "attributes.risk_level": {"op": "in", "value": ["medium", "high"]},
         },
-        "mitre": [],
+        "mitre": [
+            {
+                "tactic": "Initial Access",
+                "technique_id": "T1078.004",
+                "justification": (
+                    "A high-risk sign-in may be use of a stolen cloud account; the "
+                    "provider's risk signal can be wrong."
+                ),
+            }
+        ],
     },
     {
         "rule_id": "auth_bruteforce",
