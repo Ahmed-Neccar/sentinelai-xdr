@@ -204,3 +204,25 @@ Limits: a sensor that is stopped from the panel is not reported (that is a norma
 ## Restore rehearsal
 
 `powershell -ExecutionPolicy Bypass -File scripts\rehearse_restore.ps1` proves the newest backup (or `-ManifestPath`) restores, without touching the live stack. It starts a separate Compose project on its own database and volumes, checks the SHA-256 hashes, restores the dump and the application-data archive, compares the migration level and the row counts of the main tables with the live database, checks that an active administrator exists, prints the restore time and removes the project. With `-StartApp` it also builds and starts the API on the restored data (throw-away keys, development mode, port 18003) and checks that it becomes ready and reads the restored organization. It proves the data comes back and, with `-StartApp`, that the application starts on it; it cannot show that the `.env` keys are recoverable (that needs `scripts\restore_env.ps1`).
+
+## Sessions, passwords and who is signed in
+
+- A sign-in lasts at most `SESSION_MAX_HOURS` (12) however often it renews; the web page also signs out after 30 minutes without input. A person sees and ends their own sessions under Settings; an administrator can end every session of an account (Users page, "Sign out everywhere"). A renewal token used twice more than 15 seconds apart ends that session (audit entry `auth.refresh_reuse_detected`).
+- Changing one's own password needs the current one and signs every other device out. An administrator resetting someone else's must confirm with their own password.
+- Company accounts: `docs/ENTRA_KURULUM.md` (SSO, group-to-role mapping, automatic account creation, SCIM). Untested against a live Entra tenant.
+
+## Audit log: integrity and copies
+
+- Each audit row is chained to the one before it by a database trigger; the Audit page shows whether the chain is intact. Removing the newest rows is not visible from the database alone, so add a destination on the Audit page ("Send the audit log elsewhere"): new rows are sent every minute over HTTPS (public host name only, optional HMAC signature) with the hash of the last row. If a destination fails it is retried with a growing wait and nothing is skipped; its state ("Failing", rows waiting) is on that page. Keep the collector's copy for as long as you need to prove the log was not cut.
+
+## Response actions: what happens when a sensor is away
+
+- A real action cannot be proposed or approved for a sensor that has not contacted the server for 45 seconds. Approved actions must reach the sensor within 15 minutes and report back within 5 minutes after they are handed over, or they are closed (cancelled or failed with reason `timeout`). A job runs every minute for this even if the sensor never returns. An action that timed out may still be in effect on the host: use "Lift now" to tell the sensor to undo it.
+
+## Request limits
+
+- In production the API limits requests per session (1200 a minute), per address (3000) and for uploads and audit export (20); sign-in has its own stricter limits. Tune with `API_SESSION_LIMIT_PER_MINUTE`, `API_ADDRESS_LIMIT_PER_MINUTE`, `API_HEAVY_LIMIT_PER_MINUTE`, or switch off with `API_RATE_LIMIT_ENABLED=false`. Put your own limits (and HSTS) on the reverse proxy in front: the bundled lab proxy has neither.
+
+## Sensor behaviour during an outage
+
+- Unsent event batches wait in `sensor/spool/` (at most 2000 files or 500 MB; the oldest are dropped first and the console says so), are written atomically, and unreadable files are set aside as `bad-*` instead of blocking the rest. Retries back off (10 seconds doubling to 2 minutes, with jitter). The local controller restarts a sensor that died by itself with the same settings (at most 5 times an hour); the Sensors page says when it is waiting or has given up. A Linux sensor (network flows only) is described in `sensor/README.md`.

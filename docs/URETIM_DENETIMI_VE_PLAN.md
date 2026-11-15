@@ -155,15 +155,16 @@ commit'lenir; canlıya alma her aşama sonunda ayrıca sorulur.
 | A7 | Düzeltme notu yukarıda; arayüzde anlık çevrimiçi/çevrimdışı rozeti eklendi |
 | Ek güvenlik bulgusu | Zaman aşımına uğrayan eylem aslında uygulanmış olabilir; bu yüzden `failed (timeout)` ve `dispatched` durumları da "Şimdi kaldır" ile geri alınabilir (sensöre kaldırma emri gider) |
 | B1 hız sınırı | **Yapıldı.** Oturum başına, adres başına ve ağır çağrılar (yükleme, denetim dışa aktarma) için; Redis yoksa süreç içi sayaç, Redis erişilemezse engellemez; geliştirmede kapalı. nginx `limit_req` eklenmedi (B5) |
-| B2 sensör kimliği | **Yapılmadı** (ayrı onay gerektiriyordu) |
-| B3 denetleyici belirteci | **Yapılmadı.** Tarayıcıya belirteci güvenle iletmek bir eşleştirme arayüzü gerektirir; tasarım kararı bekliyor |
+| B2 sensör kimliği | **Yeniden değerlendirildi, değişiklik gerekmedi.** Sensörün "parolası" sunucunun ürettiği ≥40 karakterlik rastgele bir sır; ayrıca her istek Ed25519 imzalı ve sayaçlı. Kullanıcı seçimi bir parola değil, fiilen bir API anahtarı. Kalan risk (dosyanın çalınması) imzalama anahtarının sensörde kalması ve iptal edilebilmesiyle sınırlı |
+| B3 denetleyici belirteci | **Bilerek yapılmadı.** Aynı kullanıcı olarak çalışan bir işlem hem belirteç dosyasını okuyabilir hem Origin başlığını taklit edebilir; yalnızca aynı bilgisayardaki başka bir hesaba karşı korur, karşılığında eşleştirme adımı ister. Web sayfalarına karşı Origin denetimi zaten koruyor |
 | B6 yetki bütünlük testi | **Yapıldı** (`test_api_hardening.py`): açık liste dışında kimlik bağımlılığı olmayan rota testi bozar |
-| B7 | **Kısmen:** denetim dışa aktarımı kaydediliyor; syslog/webhook itme yapılmadı |
+| B7 | **Yapıldı:** denetim dışa aktarımı kaydediliyor; denetim günlüğü HTTPS hedeflerine her dakika itiliyor (Denetim sayfası) |
 | C1–C3 | Kayıt ve kimlik bilgisi indirme zaten vardı; çevrimiçi rozeti ve 15 sn yenileme eklendi. Kurulum paketinin arayüzden indirilmesi yapılmadı |
 | D1 kuyruk sınırı | **Yapıldı** (2000 dosya, 500 MB; en eski atılır) |
 | D2 geri çekilme | **Yapıldı** (kalp atışı ve yükleme için üstel + rastgelelik). **Döngüye bağlantı yalnızca elle okunarak ve derlenerek doğrulandı; ana döngü için otomatik test yok** |
 | D3 atomik yazım | **Yapıldı** |
 | D4 zehirli dosya | **Yapıldı** (`bad-*` olarak kenara alınır, sonrakiler gönderilir) |
-| D5, D6 | **Yapılmadı / incelenmedi** |
+| D5 | **Doğrulandı:** olaylarda `dedup_key` var, yinelenenler sayılıyor (`duplicates`) |
+| D6 | **Yapıldı:** denetleyici çöken sensörü artan beklemeyle yeniden başlatır (saatte en az 5) ve arayüzde gösterir; gerçek Windows çökmesiyle denenmedi |
 | E1 | Çevrimdışı, zaman aşımı, süpürme, kuyruk sınırı, atomiklik, karantina, backoff testleri yazıldı |
 | 5. aşama taraması | `pip-audit` (requirements.lock) ve `npm audit` (üretim ve geliştirme): **bilinen zafiyet yok** (tarama anındaki veri tabanına göre). Girdi doğrulama, imaj sertleştirme, bulut sırları: **yapılmadı** |
