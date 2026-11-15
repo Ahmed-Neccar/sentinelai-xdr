@@ -495,6 +495,10 @@ class ResponseSimulation(TenantOwned, Base):
     enforced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     block_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     removed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # When the action was handed to its sensor, and a short machine-readable reason when it
+    # did not run (timeout, not_delivered, refused, ...).
+    dispatched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    failure_code: Mapped[str | None] = mapped_column(String(32), nullable=True)
 
     case: Mapped[Case] = relationship(back_populates="response_simulations")
 

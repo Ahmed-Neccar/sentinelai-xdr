@@ -339,6 +339,11 @@ const tr: Record<string, string> = {
   'records checked; every record is linked to the one before it.':'kayıt denetlendi; her kayıt bir öncekine bağlı.','Records no longer match their chain at positions':'Şu sıralardaki kayıtlar zincirle uyuşmuyor',
   'Latest hash':'Son özet','Keep a copy outside the server to also detect removed latest records.':'En son kayıtların silindiğini de anlamak için bunun bir kopyasını sunucu dışında saklayın.',
   'Check again':'Yeniden denetle','Download for a SIEM':'SIEM için indir',
+  'offline':'çevrimdışı','sent to the sensor, waiting for its result':'sensöre gönderildi, sonucu bekleniyor',
+  'Every sensor that could carry this out is offline. Start the sensor first; nothing can be proposed until it reports.':'Bunu yapabilecek tüm sensörler çevrimdışı. Önce sensörü başlatın; sensör bildirim yapana kadar hiçbir şey teklif edilemez.',
+  'This sensor is offline, so the action could not be carried out. Start the sensor and try again':'Bu sensör çevrimdışı, eylem uygulanamaz. Sensörü başlatıp yeniden deneyin',
+  'This sensor is offline. Approve again once it is running':'Bu sensör çevrimdışı. Çalışmaya başlayınca yeniden onaylayın',
+  'The sensor can no longer carry out this action':'Sensör artık bu eylemi uygulayamıyor',
 }
 
 export function translate(text: string, language: Language): string {

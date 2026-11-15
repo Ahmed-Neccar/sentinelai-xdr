@@ -349,6 +349,13 @@ def propose_response_simulation(
                 "sensor_cannot_enforce",
                 "Choose an active sensor that was started with this action allowed",
             )
+        if not sensor["online"]:
+            raise AppError(
+                409,
+                "sensor_offline",
+                "This sensor is offline, so the action could not be carried out. "
+                "Start the sensor and try again",
+            )
         try:
             target = ip_block.normalize_target(payload.action_type, target, sensor["name"])
             duration_minutes = ip_block.validate_minutes(
@@ -534,10 +541,27 @@ def approve_response_simulation(
         )
         db.commit()
         raise AppError(409, "proposal_expired", "This response proposal has expired")
+    executed = simulation.action_type in EXECUTED_ACTIONS
+    if executed:
+        # The sensor may have gone away since the proposal (up to a day ago): approving then
+        # would only leave the action waiting for a machine that is not there.
+        spec = ip_block.EXECUTED[simulation.action_type]
+        sensor = next(
+            (s for s in _enforcing_sensors(db) if s["sensor_id"] == simulation.sensor_id), None
+        )
+        if sensor is None or spec.capability not in sensor["capabilities"]:
+            raise AppError(
+                409, "sensor_cannot_enforce", "The sensor can no longer carry out this action"
+            )
+        if not sensor["online"]:
+            raise AppError(
+                409,
+                "sensor_offline",
+                "This sensor is offline. Approve again once it is running",
+            )
     simulation.status = "approved"
     simulation.approved_by = actor.id
     simulation.approved_at = datetime.now(UTC)
-    executed = simulation.action_type in EXECUTED_ACTIONS
     if executed:
         # From here the sensor picks it up on its next signed heartbeat.
         simulation.enforcement_status = ip_block.PENDING
@@ -638,7 +662,11 @@ def lift_ip_block(
     if simulation.enforcement_status == ip_block.PENDING:
         simulation.enforcement_status = ip_block.CANCELLED
         simulation.removed_at = datetime.now(UTC)
-    elif simulation.enforcement_status == ip_block.APPLIED:
+    elif simulation.enforcement_status in {ip_block.APPLIED, ip_block.DISPATCHED} or (
+        simulation.enforcement_status == ip_block.FAILED and simulation.failure_code == "timeout"
+    ):
+        # Handed to the sensor, or its report never arrived: the action may be in effect on the
+        # host without the server knowing, so lifting asks the sensor to undo it.
         simulation.enforcement_status = ip_block.REMOVAL_PENDING
     else:
         raise AppError(409, "invalid_transition", "This action is not active")
@@ -764,6 +792,8 @@ def _response_simulation(item: ResponseSimulation) -> dict:
         "duration_minutes": item.duration_minutes,
         "enforcement_status": item.enforcement_status,
         "enforcement_detail": item.enforcement_detail,
+        "failure_code": item.failure_code,
+        "dispatched_at": item.dispatched_at,
         "enforced_at": item.enforced_at,
         "block_until": item.block_until,
         "removed_at": item.removed_at,
@@ -778,6 +808,7 @@ def _enforcing_sensors(db: Session) -> list[dict]:
         .where(SensorRegistration.status == "active")
     ).all()
     known = {spec.capability for spec in ip_block.EXECUTED.values()}
+    now = datetime.now(UTC)
     sensors = []
     for registration, source in rows:
         capabilities = sorted(known & set((source.config or {}).get("capabilities") or []))
@@ -787,6 +818,7 @@ def _enforcing_sensors(db: Session) -> list[dict]:
                     "sensor_id": registration.sensor_id,
                     "name": (source.config or {}).get("host_name") or source.name,
                     "last_seen_at": registration.last_seen_at,
+                    "online": ip_block.is_online(registration.last_seen_at, now),
                     "capabilities": capabilities,
                 }
             )

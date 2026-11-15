@@ -247,6 +247,23 @@ def deliver_notifications_task() -> dict[str, int]:
     return totals
 
 
+@celery_app.task(name="app.workers.tasks.sweep_response_actions_task")
+def sweep_response_actions_task() -> dict[str, int]:
+    """Close response actions that ran out of time, for every organization."""
+    from app.response.lifecycle import sweep_stale_actions
+
+    with SessionLocal() as catalog_db:
+        organization_ids = list(catalog_db.scalars(select(Organization.id)))
+    totals = {"cancelled": 0, "failed": 0, "expired": 0}
+    for organization_id in organization_ids:
+        with SessionLocal() as db:
+            set_organization_context(db, organization_id)
+            for key, value in sweep_stale_actions(db, datetime.now(UTC)).items():
+                totals[key] += value
+            db.commit()
+    return totals
+
+
 @celery_app.task(name="app.workers.tasks.check_system_health_task")
 def check_system_health_task() -> dict[str, int]:
     """Queue alerts for silent sensors and failing cloud connectors, per organization."""

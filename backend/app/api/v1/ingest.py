@@ -24,7 +24,6 @@ from app.core.security import hash_password
 from app.ingestion.parsers import RowError, normalize_generic, validate_normalized_event
 from app.ingestion.service import safe_filename
 from app.models import (
-    AuditLog,
     DataSource,
     IngestionJob,
     ResponseSimulation,
@@ -36,6 +35,7 @@ from app.models import (
 )
 from app.response import ip_block
 from app.response.enrollment import new_sensor_login
+from app.response.lifecycle import sweep_stale_actions
 from app.response.notify import notify_block_event
 from app.schemas.common import Page, TokenUser
 from app.workers.dispatch import enqueue_ingestion
@@ -1043,13 +1043,20 @@ def _pending_response_actions(
 ) -> list[dict]:
     if registration is None:
         return []
+    # Close what ran out of time first, so the sensor is never handed a stale action.
+    sweep_stale_actions(db, now, sensor_id=registration.sensor_id)
     rows = db.scalars(
         select(ResponseSimulation)
         .where(
             ResponseSimulation.sensor_id == registration.sensor_id,
             ResponseSimulation.action_type.in_(list(ip_block.EXECUTED)),
             ResponseSimulation.enforcement_status.in_(
-                [ip_block.PENDING, ip_block.APPLIED, ip_block.REMOVAL_PENDING]
+                [
+                    ip_block.PENDING,
+                    ip_block.DISPATCHED,
+                    ip_block.APPLIED,
+                    ip_block.REMOVAL_PENDING,
+                ]
             ),
         )
         .order_by(ResponseSimulation.created_at)
@@ -1058,26 +1065,21 @@ def _pending_response_actions(
     actions: list[dict] = []
     for row in rows:
         spec = ip_block.EXECUTED[row.action_type]
-        if (
-            row.enforcement_status == ip_block.PENDING
-            and row.approved_at is not None
-            and now - row.approved_at > ip_block.DELIVERY_WINDOW
+        if row.enforcement_status in {ip_block.PENDING, ip_block.DISPATCHED} and (
+            row.status == "approved"
         ):
-            # Approved while the sensor was away. Applying it whenever the
-            # sensor next starts, perhaps days later, is not what was approved.
-            row.enforcement_status = ip_block.CANCELLED
-            row.enforcement_detail = "not delivered to the sensor in time"
-            row.removed_at = now
-            db.add(
-                AuditLog(
-                    action=f"response.{spec.audit}.delivery_expired",
+            if row.enforcement_status == ip_block.PENDING:
+                row.enforcement_status = ip_block.DISPATCHED
+                row.dispatched_at = now
+                write_audit(
+                    db,
+                    actor_id=None,
+                    action=f"response.{spec.audit}.dispatched",
                     target_type="response_simulation",
                     target_id=str(row.id),
                     details={"target": row.target, "sensor_id": str(registration.sensor_id)},
                 )
-            )
-            continue
-        if row.enforcement_status == ip_block.PENDING and row.status == "approved":
+            # An unanswered action is offered again; the sensor answers idempotently.
             actions.append(
                 {
                     "id": str(row.id),

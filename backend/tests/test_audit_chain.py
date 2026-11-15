@@ -71,3 +71,11 @@ def test_the_export_pages_by_sequence_number(tenant) -> None:
     assert second["items"][0]["seq"] > first["items"][-1]["seq"]
     denied = client.get("/api/v1/audit-logs/export", headers=tenant.headers["analyst"])
     assert denied.status_code == 403
+
+
+def test_taking_an_export_is_itself_recorded(tenant) -> None:
+    headers = tenant.headers["auditor"]
+    tenant.client.get("/api/v1/audit-logs/export?limit=1", headers=headers)
+    rows = tenant.client.get("/api/v1/audit-logs?page_size=50", headers=headers).json()["items"]
+    exports = [r for r in rows if r["action"] == "audit.exported"]
+    assert exports and exports[0]["details"]["rows"] == 1

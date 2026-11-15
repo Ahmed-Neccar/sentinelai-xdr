@@ -32,6 +32,11 @@ celery_app.conf.update(
             "schedule": crontab(minute="*/5"),
             "options": {"queue": "celery"},
         },
+        "sweep-response-actions": {
+            "task": "app.workers.tasks.sweep_response_actions_task",
+            "schedule": 60.0,
+            "options": {"queue": "celery", "expires": 55},
+        },
         "deliver-alert-notifications": {
             "task": "app.workers.tasks.deliver_notifications_task",
             "schedule": 30.0,

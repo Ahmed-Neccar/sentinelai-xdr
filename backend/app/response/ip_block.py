@@ -56,7 +56,8 @@ MIN_MINUTES = EXECUTED[ACTION].min_minutes
 MAX_MINUTES = EXECUTED[ACTION].max_minutes
 
 # enforcement_status values
-PENDING = "pending"  # approved, waiting for the sensor to apply it
+PENDING = "pending"  # approved, not yet handed to the sensor
+DISPATCHED = "dispatched"  # handed to the sensor, no result yet
 APPLIED = "applied"
 REFUSED = "refused"  # the sensor declined, for example a protected address
 FAILED = "failed"
@@ -70,6 +71,18 @@ SENSOR_RESULTS = {"applied", "refused", "failed", "removed"}
 # A sensor heartbeats every ten seconds, so a longer wait means it was not
 # running, and the situation that justified the action may have changed.
 DELIVERY_WINDOW = timedelta(minutes=15)
+
+# Once handed to the sensor, a result must come back within this time or the action is
+# closed as failed (timeout): a late application is not what was approved.
+EXECUTION_TIMEOUT = timedelta(minutes=5)
+
+# A sensor that has not contacted the server for longer than this is treated as offline.
+# It heartbeats every ten seconds, so this tolerates a few missed beats.
+ONLINE_WINDOW = timedelta(seconds=45)
+
+
+def is_online(last_seen_at: datetime | None, now: datetime) -> bool:
+    return last_seen_at is not None and now - last_seen_at <= ONLINE_WINDOW
 
 # A local Windows account name: no path, option or shell characters, and it
 # cannot start with a character that a command could read as a switch.
@@ -144,7 +157,7 @@ def block_until(applied_at: datetime, minutes: int) -> datetime:
 def next_status(current: str | None, result: str) -> str | None:
     """The enforcement status after a sensor report, or None if the report is not allowed."""
     if result in {"applied", "refused", "failed"}:
-        return result if current == PENDING else None
+        return result if current in {PENDING, DISPATCHED} else None
     if result == "removed":
         return REMOVED if current in {APPLIED, REMOVAL_PENDING} else None
     return None

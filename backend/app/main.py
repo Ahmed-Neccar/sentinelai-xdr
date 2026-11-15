@@ -1,3 +1,4 @@
+import hashlib
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -52,6 +53,30 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "Idempotency-Key"],
 )
+
+
+@app.middleware("http")
+async def limit_request_rate(request: Request, call_next):
+    from fastapi.responses import JSONResponse
+    from starlette.concurrency import run_in_threadpool
+
+    from app.core import api_rate_limit
+    from app.core.client_address import client_ip
+
+    kind = api_rate_limit.classify(request.method, request.url.path)
+    if kind is not None and api_rate_limit.enabled():
+        authorization = request.headers.get("authorization", "")
+        # One counter per session: hashing the token keeps the secret out of the counter store.
+        session = hashlib.sha256(authorization.encode()).hexdigest()[:32] if authorization else None
+        if await run_in_threadpool(
+            api_rate_limit.over_limit, kind, client_ip(request) or "unknown", session
+        ):
+            return JSONResponse(
+                status_code=429,
+                headers={"Retry-After": str(api_rate_limit.WINDOW_SECONDS)},
+                content=error_body("rate_limited", "Too many requests. Slow down and try again."),
+            )
+    return await call_next(request)
 
 
 @app.middleware("http")

@@ -60,6 +60,17 @@ class Settings(BaseSettings):
     # Hard ceiling for one sign-in. Each refresh rotates the token but never extends the
     # session beyond this, so a session cannot stay open for days by being used regularly.
     session_max_hours: int = Field(default=12, ge=1, le=720, alias="SESSION_MAX_HOURS")
+    # Request limits for the API as a whole (sign-in has its own, stricter ones). Per signed-in
+    # session, per address, and for the few calls that are expensive to serve. Off in
+    # development so the test suite and local work are not throttled.
+    api_rate_limit_enabled: bool | None = Field(default=None, alias="API_RATE_LIMIT_ENABLED")
+    api_session_limit_per_minute: int = Field(
+        default=1200, ge=10, alias="API_SESSION_LIMIT_PER_MINUTE"
+    )
+    api_address_limit_per_minute: int = Field(
+        default=3000, ge=10, alias="API_ADDRESS_LIMIT_PER_MINUTE"
+    )
+    api_heavy_limit_per_minute: int = Field(default=20, ge=1, alias="API_HEAVY_LIMIT_PER_MINUTE")
     upload_dir: str = Field(default=".data/uploads", alias="UPLOAD_DIR")
     ml_artifact_dir: str = Field(default=".data/ml", alias="ML_ARTIFACT_DIR")
 

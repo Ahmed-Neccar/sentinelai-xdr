@@ -4,12 +4,13 @@ from datetime import UTC, datetime, timedelta
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select, text
 
-from app.api.deps import DbDep, require_roles
+from app.api.deps import DbDep, client_ip, require_roles
+from app.audit.service import write_audit
 from app.core.config import settings
 from app.core.errors import AppError
 from app.core.permissions import ADMIN, ANALYST, AUDITOR, MANAGE_SETTINGS, READ_AUDIT, READ_EVENTS
@@ -240,13 +241,23 @@ def audit_integrity(db: DbDep, _: Auditor) -> dict:
 
 @router.get("/audit-logs/export")
 def audit_export(
-    db: DbDep, _: Auditor, after_seq: int = 0, limit: int = 1000
+    db: DbDep, actor: Auditor, request: Request, after_seq: int = 0, limit: int = 1000
 ) -> dict:
     """Audit rows in chain order for a SIEM collector: call again with `next_seq` to continue."""
     limit = min(max(limit, 1), 5000)
     rows = db.scalars(
         select(AuditLog).where(AuditLog.seq > after_seq).order_by(AuditLog.seq).limit(limit)
     ).all()
+    # Reading the whole audit trail is itself worth recording (who took a copy, from where).
+    write_audit(
+        db,
+        actor_id=actor.id,
+        action="audit.exported",
+        target_type="audit_log",
+        ip_address=client_ip(request),
+        details={"after_seq": after_seq, "rows": len(rows)},
+    )
+    db.commit()
     return {
         "items": [
             {
