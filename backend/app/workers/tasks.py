@@ -264,6 +264,22 @@ def sweep_response_actions_task() -> dict[str, int]:
     return totals
 
 
+@celery_app.task(name="app.workers.tasks.push_audit_sinks_task")
+def push_audit_sinks_task() -> dict[str, int]:
+    """Send new audit rows to every organization's outside collectors."""
+    from app.audit.sink import push_all
+
+    with SessionLocal() as catalog_db:
+        organization_ids = list(catalog_db.scalars(select(Organization.id)))
+    sent = 0
+    for organization_id in organization_ids:
+        with SessionLocal() as db:
+            set_organization_context(db, organization_id)
+            sent += push_all(db)
+            db.commit()
+    return {"rows_sent": sent}
+
+
 @celery_app.task(name="app.workers.tasks.check_system_health_task")
 def check_system_health_task() -> dict[str, int]:
     """Queue alerts for silent sensors and failing cloud connectors, per organization."""

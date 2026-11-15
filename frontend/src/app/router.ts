@@ -15,3 +15,13 @@ export function sectionFromHash(hash: string): SectionName | null {
   const slug = hash.replace(/^#\/?/, '').split(/[/?]/)[0]
   return SECTIONS.find(section => slugOf(section) === slug) ?? null
 }
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/** The finding id in a hash such as `#/detections/<uuid>`, or null. */
+export function detectionIdFromHash(hash: string): string | null {
+  const parts = hash.replace(/^#\/?/, '').split(/[?]/)[0].split('/')
+  return parts[0] === 'detections' && parts[1] && UUID_PATTERN.test(parts[1]) ? parts[1] : null
+}
+
+export const hashForDetection = (id: string): string => `#/detections/${id}`

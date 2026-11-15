@@ -128,6 +128,8 @@ class RefreshToken(TenantOwned, Base):
     session_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), index=True)
     ip_address: Mapped[str | None] = mapped_column(String(64), nullable=True)
     user_agent: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    # Set only when the token was replaced by a newer one (rotation), not when it was revoked.
+    rotated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -592,6 +594,27 @@ class AuditLog(TenantOwned, Base):
     )
     prev_hash: Mapped[str | None] = mapped_column(Text, nullable=True)
     row_hash: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class AuditSink(TenantOwned, Base):
+    """A destination that receives the audit log (a SIEM or archive) as it grows."""
+
+    __tablename__ = "audit_sinks"
+    __table_args__ = (UniqueConstraint("organization_id", "name"),)
+
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    name: Mapped[str] = mapped_column(String(200))
+    target_encrypted: Mapped[str] = mapped_column(Text)
+    enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default=text("true")
+    )
+    # The highest audit sequence number the destination has accepted.
+    last_seq: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0, server_default="0")
+    last_success_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    failures: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class SystemSetting(TenantOwned, Base):

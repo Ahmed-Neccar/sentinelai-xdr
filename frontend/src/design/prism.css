@@ -43,7 +43,7 @@ html[data-theme="dark"] .metric-icon.green{background:rgba(16,185,129,.14);color
 html[data-theme="dark"] .metric-art.purple{background:var(--prism-accent)}
 
 /* ---------- controls ---------- */
-html[data-theme="dark"] .primary{background:linear-gradient(135deg,#8B5CF6,#6366F1);border-color:rgba(167,139,250,.55);color:#fff;border-radius:var(--prism-radius-sm);box-shadow:0 6px 20px rgba(99,102,241,.28)}
+html[data-theme="dark"] .primary{background:linear-gradient(135deg,#7C3AED,#6366F1);border-color:rgba(167,139,250,.55);color:#fff;border-radius:var(--prism-radius-sm);box-shadow:0 6px 20px rgba(99,102,241,.28)}
 html[data-theme="dark"] .secondary{background:var(--prism-surface-strong);border-color:var(--prism-border);color:var(--prism-text);border-radius:var(--prism-radius-sm)}
 html[data-theme="dark"] .secondary:hover{border-color:var(--prism-border-strong);background:rgba(139,92,246,.14)}
 html[data-theme="dark"] .sensor-stop{border-radius:var(--prism-radius-sm)}

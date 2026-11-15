@@ -9,7 +9,7 @@ import { SEVERITY_ORDER, normalizeSeverity } from '../../design/severity'
 import { translate, type Language } from '../../i18n'
 import { api } from '../../services/http'
 import { LIFECYCLE_STEPS, lifecycleOf, responses, type ResponseAction } from '../../services/responses'
-import ForensicDrawer from '../detections/ForensicDrawer'
+import { hashForDetection } from '../../app/router'
 import SystemHealth from '../../SystemHealth'
 
 type Row = Record<string, any>
@@ -31,7 +31,6 @@ export default function BentoOverview({ language, setSection, setError }: { lang
   const [actions, setActions] = useState<ResponseAction[]>([])
   const [loading, setLoading] = useState(true)
   const [open, setOpen] = useState<string | null>(null)
-  const [inspect, setInspect] = useState<Row | null>(null)
 
   const load = useCallback(async () => {
     const [s, d, ss, r] = await Promise.allSettled([
@@ -112,7 +111,7 @@ export default function BentoOverview({ language, setSection, setError }: { lang
                         <div className="finding-body">
                           <p>{finding.summary || t('A security rule noticed an unusual activity.')}</p>
                           {finding.mitre?.length > 0 && <div className="mitre-row">{finding.mitre.map((item: any, position: number) => <MitreBadge key={position} item={item} />)}</div>}
-                          <button type="button" className="primary" onClick={() => setInspect(finding)}>{t('Investigate in detail')}</button>
+                          <button type="button" className="primary" onClick={() => { window.location.hash = hashForDetection(finding.id) }}>{t('Investigate in detail')}</button>
                         </div>
                       )}
                     </article>
@@ -157,7 +156,6 @@ export default function BentoOverview({ language, setSection, setError }: { lang
           <div className="bento-health"><SystemHealth language={language} apiRequest={api} /></div>
         </div>
       )}
-      {inspect && <ForensicDrawer finding={inspect as { id: string; title?: string }} language={language} close={() => setInspect(null)} />}
     </div>
   )
 }

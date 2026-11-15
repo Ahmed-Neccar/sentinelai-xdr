@@ -32,6 +32,11 @@ celery_app.conf.update(
             "schedule": crontab(minute="*/5"),
             "options": {"queue": "celery"},
         },
+        "push-audit-sinks": {
+            "task": "app.workers.tasks.push_audit_sinks_task",
+            "schedule": 60.0,
+            "options": {"queue": "celery", "expires": 55},
+        },
         "sweep-response-actions": {
             "task": "app.workers.tasks.sweep_response_actions_task",
             "schedule": 60.0,

@@ -1,5 +1,6 @@
 from app.models.entities import (
     AuditLog,
+    AuditSink,
     Case,
     CaseComment,
     CaseDetection,
@@ -30,6 +31,7 @@ from app.models.entities import (
 
 __all__ = [
     "AuditLog",
+    "AuditSink",
     "Case",
     "CaseComment",
     "CaseDetection",

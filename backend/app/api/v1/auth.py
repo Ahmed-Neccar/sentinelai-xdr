@@ -41,6 +41,9 @@ from app.db.session import set_organization_context
 from app.models import Organization, RefreshToken, User, UserRole
 from app.schemas.common import TokenUser
 
+# Two renewals of the same token this close together are a browser race, not theft.
+REUSE_GRACE = timedelta(seconds=15)
+
 router = APIRouter(prefix="/auth", tags=["auth"])
 logger = logging.getLogger(__name__)
 
@@ -623,7 +626,33 @@ def refresh_token(request: Request, response: Response, db: DbDep) -> TokenRespo
         .where(RefreshToken.token_hash == _hash_token(token))
         .with_for_update()
     )
-    if stored is None or stored.revoked:
+    if stored is None:
+        raise AppError(401, "invalid_token", "Refresh token revoked")
+    if stored.revoked:
+        # A token that was already replaced is being presented again. Two tabs racing for a
+        # renewal do this within a moment of each other and are only refused; later than that
+        # it means a copy of the token exists somewhere it should not, so the whole session
+        # (the thief's and the owner's) ends and the owner signs in again.
+        now = datetime.now(UTC)
+        if (
+            stored.rotated_at is not None
+            and stored.session_id is not None
+            and now - stored.rotated_at > REUSE_GRACE
+        ):
+            for sibling in db.scalars(
+                select(RefreshToken).where(RefreshToken.session_id == stored.session_id)
+            ):
+                sibling.revoked = True
+            write_audit(
+                db,
+                actor_id=stored.user_id,
+                action="auth.refresh_reuse_detected",
+                target_type="user",
+                target_id=str(stored.user_id),
+                ip_address=client_ip(request),
+            )
+            db.commit()
+            raise AppError(401, "token_reuse", "This session was ended because it was used twice")
         raise AppError(401, "invalid_token", "Refresh token revoked")
     # Rotation must not stretch a session without limit: the clock runs from the sign-in.
     try:
@@ -662,6 +691,7 @@ def refresh_token(request: Request, response: Response, db: DbDep) -> TokenRespo
         db.commit()
         raise AppError(401, "mfa_required", "Complete MFA verification to continue")
     stored.revoked = True
+    stored.rotated_at = datetime.now(UTC)
     db.flush()
     return _issue_tokens(
         user,

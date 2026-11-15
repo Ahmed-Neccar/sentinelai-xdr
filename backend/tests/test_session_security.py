@@ -12,6 +12,7 @@ import jwt as pyjwt
 import pytest
 from app.core.config import settings
 from app.core.security import ALGORITHM
+from sqlalchemy import select
 from tests.conftest import PASSWORD
 
 NEW_PASSWORD = "Fresh-Long-Password-77!"  # noqa: S105 - test-only value
@@ -324,3 +325,55 @@ def test_a_rotated_session_keeps_the_same_id(tenant) -> None:
     rotated = client.post("/api/v1/auth/refresh")
     after = client.get("/api/v1/auth/sessions", headers=_bearer(rotated)).json()["items"]
     assert {s["id"] for s in before} <= {s["id"] for s in after}
+
+
+# --- a replaced refresh token that comes back ----------------------------------------------
+
+
+def _age_rotation(tenant, cookie: str, seconds: int) -> None:
+    import hashlib
+
+    from app.db.session import SessionLocal, set_organization_context
+    from app.models import RefreshToken
+
+    with SessionLocal() as db:
+        set_organization_context(db, tenant.organization_id)
+        row = db.scalar(
+            select(RefreshToken).where(
+                RefreshToken.token_hash == hashlib.sha256(cookie.encode()).hexdigest()
+            )
+        )
+        row.rotated_at = datetime.now(UTC) - timedelta(seconds=seconds)
+        db.commit()
+
+
+def test_a_replaced_token_used_much_later_ends_the_whole_session(tenant) -> None:
+    client = tenant.client
+    login = _login(tenant, tenant.emails["analyst"])
+    old_cookie = login.cookies.get("refresh_token")
+    _use_cookie(client, old_cookie)
+    rotated = client.post("/api/v1/auth/refresh")
+    new_cookie = rotated.cookies.get("refresh_token")
+    new_access = _bearer(rotated)
+    assert client.get("/api/v1/auth/me", headers=new_access).status_code == 200
+    _age_rotation(tenant, old_cookie, 120)  # the copy turns up two minutes after the rotation
+    _use_cookie(client, old_cookie)
+    reused = client.post("/api/v1/auth/refresh")
+    assert reused.status_code == 401 and reused.json()["error"]["code"] == "token_reuse"
+    # The rightful holder is out too: the session is over for everyone who held it.
+    assert client.get("/api/v1/auth/me", headers=new_access).status_code == 401
+    _use_cookie(client, new_cookie)
+    assert client.post("/api/v1/auth/refresh").status_code == 401
+
+
+def test_two_renewals_racing_within_seconds_do_not_end_the_session(tenant) -> None:
+    client = tenant.client
+    login = _login(tenant, tenant.emails["analyst"])
+    old_cookie = login.cookies.get("refresh_token")
+    _use_cookie(client, old_cookie)
+    rotated = client.post("/api/v1/auth/refresh")
+    new_access = _bearer(rotated)
+    _use_cookie(client, old_cookie)  # the second tab, a moment later
+    second = client.post("/api/v1/auth/refresh")
+    assert second.status_code == 401 and second.json()["error"]["code"] == "invalid_token"
+    assert client.get("/api/v1/auth/me", headers=new_access).status_code == 200

@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { hashForSection, sectionFromHash } from './app/router'
+import { detectionIdFromHash, hashForDetection, hashForSection, sectionFromHash } from './app/router'
 import Drawer from './components/ui/Drawer'
 import Stepper from './components/ui/Stepper'
 import Tabs from './components/ui/Tabs'
@@ -19,6 +19,14 @@ describe('router', () => {
     expect(sectionFromHash('#/cases?x=1')).toBe('Cases')
     expect(sectionFromHash('#/nonsense')).toBeNull()
     expect(sectionFromHash('')).toBeNull()
+  })
+  it('reads a finding id out of the address and refuses anything else', () => {
+    const id = '9faccf40-841c-4b0c-9b16-a0d8c3f6c14c'
+    expect(detectionIdFromHash(hashForDetection(id))).toBe(id)
+    expect(sectionFromHash(hashForDetection(id))).toBe('Detections')
+    expect(detectionIdFromHash('#/detections/not-an-id')).toBeNull()
+    expect(detectionIdFromHash(`#/cases/${id}`)).toBeNull()
+    expect(detectionIdFromHash('#/detections/<script>')).toBeNull()
   })
 })
 

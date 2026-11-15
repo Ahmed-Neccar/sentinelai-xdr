@@ -54,6 +54,9 @@ Interactive docs in Compose: `http://127.0.0.1:8001/docs` (OpenAPI). For a host-
 | POST | `/auth/sessions/end-others` | user | end every session except the current one |
 | GET | `/audit-logs/integrity` | administrator, auditor | verify the audit hash chain; reports `ok`, `checked`, `head_hash` and `broken_at` |
 | GET | `/audit-logs/export` | administrator, auditor | audit rows with hashes in chain order for a SIEM collector; `after_seq` and `limit` page it, `next_seq` continues |
+| GET, POST | `/audit-sinks` | administrator | outside collectors that receive the audit log (list; create with `name`, `url`, optional `signing_secret`, `from_beginning`); the address is never returned |
+| PATCH, DELETE | `/audit-sinks/{id}` | administrator | switch a destination on or off; remove it |
+| POST | `/audit-sinks/{id}/test`, `/audit-sinks/{id}/push` | administrator | send a test message; send the next batch now |
 | POST | `/auth/logout` | user | invalidates refresh family |
 | GET | `/auth/me` | user | current user + roles |
 | GET | `/auth/oidc/status` | none | whether single sign-on is configured, and the origin it uses |

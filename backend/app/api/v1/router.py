@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 
 from app.api.v1 import (
+    audit_sinks,
     auth,
     cases,
     connectors,
@@ -30,3 +31,4 @@ api_router.include_router(meta.router)
 api_router.include_router(notifications.router)
 api_router.include_router(identity_admin.router)
 api_router.include_router(scim.router)
+api_router.include_router(audit_sinks.router)

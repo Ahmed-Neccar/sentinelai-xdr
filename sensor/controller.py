@@ -25,6 +25,14 @@ CONTROL_PORT = 8765
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 RUNTIME_DIR = PROJECT_ROOT / "sensor" / "runtime"
 
+# If the sensor process dies without being asked to stop, it is started again with the same
+# settings, waiting longer after each attempt and giving up after a few in an hour so a
+# configuration problem does not turn into an endless loop.
+MAX_RESTARTS_PER_HOUR = 5
+RESTART_BASE_DELAY = 10.0
+RESTART_MAX_DELAY = 300.0
+QUICK_CRASH_SECONDS = 20.0
+
 
 class SensorSupervisor:
     def __init__(self) -> None:
@@ -34,6 +42,16 @@ class SensorSupervisor:
         self.interface: str | None = None
         self.options: dict[str, bool] = {}
         self.last_error: str | None = None
+        self.clock = time.monotonic
+        self.stop_requested = False
+        self.last_start_payload: dict[str, Any] | None = None
+        self.started_at = 0.0
+        self.exited_at = 0.0
+        self.crashed = False
+        self.last_exit_code: int | None = None
+        self.restart_times: list[float] = []
+        self.next_restart_at: float | None = None
+        self.restart_state = "off"  # off, watching, waiting, gave_up, revoked
         self.lock = threading.RLock()
         self.discovery_lock = threading.RLock()
         self.discovery_cancel = threading.Event()
@@ -45,7 +63,8 @@ class SensorSupervisor:
         with self.lock:
             running = self.process is not None and self.process.poll() is None
             if not running and self.process is not None:
-                if self.process.returncode not in (0, None):
+                self._note_exit()
+                if self.process is not None and self.process.returncode not in (0, None):
                     detail = ""
                     log_path = RUNTIME_DIR / "capture.log"
                     try:
@@ -78,7 +97,72 @@ class SensorSupervisor:
                 "interface": self.interface if running else None,
                 "options": self.options if running else {},
                 "last_error": self.last_error,
+                "restart_state": self.restart_state,
+                "restarts_last_hour": len([t for t in self.restart_times if self.clock() - t < 3600]),
+                "last_exit_code": self.last_exit_code,
             }
+
+    def _note_exit(self) -> None:
+        """Remember how the sensor process ended (once) so the watchdog can decide what to do."""
+        process = self.process
+        if process is None or process.poll() is None:
+            return
+        code = process.returncode
+        if self.last_exit_code != code or self.exited_at < self.started_at:
+            self.last_exit_code = code
+            self.exited_at = self.clock()
+            revoked = False
+            try:
+                tail = (RUNTIME_DIR / "capture.log").read_text(encoding="utf-8", errors="replace")[-4000:]
+                revoked = "access was revoked" in tail
+            except OSError:
+                pass
+            if revoked:
+                self.crashed = False
+                self.restart_state = "revoked"
+                self.last_error = "This sensor's access was revoked. Register it again to use it."
+            else:
+                self.crashed = code not in (0, None) and not self.stop_requested
+                if self.crashed and self.last_start_payload is not None:
+                    self.restart_state = "waiting"
+
+    def watchdog_tick(self) -> None:
+        """Restart a sensor that died on its own. Called every few seconds by a background thread."""
+        with self.lock:
+            if self.process is not None:
+                self._note_exit()
+            if not self.crashed or self.last_start_payload is None or self.stop_requested:
+                return
+            if self.process is not None and self.process.poll() is None:
+                return
+            now = self.clock()
+            self.restart_times = [t for t in self.restart_times if now - t < 3600]
+            if len(self.restart_times) >= MAX_RESTARTS_PER_HOUR:
+                self.crashed = False
+                self.restart_state = "gave_up"
+                self.last_error = (
+                    "The sensor stopped several times in an hour and was not restarted again. "
+                    "Check the log, then start it by hand."
+                )
+                return
+            if self.next_restart_at is None:
+                delay = min(RESTART_MAX_DELAY, RESTART_BASE_DELAY * (2 ** len(self.restart_times)))
+                if self.exited_at - self.started_at < QUICK_CRASH_SECONDS:
+                    delay = max(delay, 60.0)
+                self.next_restart_at = now + delay
+                self.restart_state = "waiting"
+                return
+            if now < self.next_restart_at:
+                return
+            self.restart_times.append(now)
+            self.next_restart_at = None
+            try:
+                self.process = None
+                self.start(dict(self.last_start_payload))
+            except Exception as exc:  # noqa: BLE001 - keep watching; the reason is shown to the person
+                self.last_error = f"Automatic restart failed: {exc}"
+                self.crashed = True
+                self.restart_state = "waiting"
 
     def start(self, payload: dict[str, Any]) -> dict[str, Any]:
         interface = payload.get("interface")
@@ -169,10 +253,22 @@ class SensorSupervisor:
                 "allow_account_disable": allow_account_disable,
             }
             self.last_error = None
+            self.last_start_payload = dict(payload)
+            self.started_at = self.clock()
+            self.exited_at = 0.0
+            self.crashed = False
+            self.stop_requested = False
+            self.next_restart_at = None
+            self.restart_state = "watching"
             return self.status()
 
     def stop(self) -> dict[str, Any]:
         with self.lock:
+            # A stop asked for by a person is never undone by the watchdog.
+            self.stop_requested = True
+            self.crashed = False
+            self.restart_state = "off"
+            self.next_restart_at = None
             if self.process is None or self.process.poll() is not None:
                 return {"running": False, "message": "No sensor process is running."}
             if self.stop_file is not None:
@@ -394,11 +490,22 @@ def main() -> int:
         with redirect_stdout(log), redirect_stderr(log):
             print(f"SentinelAI sensor controller listening on {CONTROL_HOST}:{CONTROL_PORT}.", flush=True)
             print("Capture data remains header-only and passive.", flush=True)
+            stop_watchdog = threading.Event()
+
+            def watch() -> None:
+                while not stop_watchdog.wait(5.0):
+                    try:
+                        server.supervisor.watchdog_tick()  # type: ignore[attr-defined]
+                    except Exception as exc:  # noqa: BLE001 - the watchdog must never die
+                        print(f"Watchdog error: {exc}", flush=True)
+
+            threading.Thread(target=watch, name="sensor-watchdog", daemon=True).start()
             try:
                 server.serve_forever()
             except KeyboardInterrupt:
                 pass
             finally:
+                stop_watchdog.set()
                 server.supervisor.stop()  # type: ignore[attr-defined]
                 server.server_close()
     return 0
