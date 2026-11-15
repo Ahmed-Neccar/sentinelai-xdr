@@ -11,6 +11,7 @@ import os
 import platform
 import queue
 import random
+import shutil
 import subprocess
 import sys
 import threading
@@ -34,6 +35,24 @@ from windows_security import WindowsSecurityLog
 
 SENSOR_VERSION = "0.4.0"
 _COUNTER_LOCK = threading.Lock()
+
+
+def capture_prerequisite_problem(system: str | None = None, which=shutil.which) -> str | None:
+    """Why packet capture cannot work on this computer, or None.
+
+    On Linux and macOS Scapy hands its capture filter ("tcp or udp") to tcpdump to compile. Without
+    it the sniffer starts and then sees nothing, which looks like a quiet network, so the sensor
+    refuses to start instead. Windows needs Npcap, which is checked separately.
+    """
+    if (system or platform.system()) == "Windows":
+        return None
+    if which("tcpdump") is None:
+        return (
+            "Packet capture is unavailable: tcpdump (libpcap) is not installed. Install it "
+            "(for example `apt install tcpdump`), and run the sensor as root or with the "
+            "CAP_NET_RAW capability."
+        )
+    return None
 
 
 def get_or_create_sensor_id() -> str:
@@ -591,6 +610,10 @@ def main() -> int:
         parser.error("--interface is required; run --list-interfaces to select an adapter")
     if args.duration_seconds < 0 or args.flush_seconds <= 0 or not 1 <= args.batch_size <= 100:
         parser.error("duration must be >= 0, flush interval > 0, and batch size between 1 and 100")
+    problem = capture_prerequisite_problem()
+    if problem:
+        print(problem, file=sys.stderr)
+        return 4
     if conf.L2listen.__class__.__name__ == "_NotAvailableSocket":
         print(
             "Packet capture is unavailable: Scapy cannot find Npcap's wpcap.dll. "

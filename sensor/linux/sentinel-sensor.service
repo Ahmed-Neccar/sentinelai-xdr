@@ -1,0 +1,34 @@
+# systemd unit for the SentinelAI network sensor on Linux.
+#
+#   sudo install -d /opt/sentinel-sensor /etc/sentinel
+#   sudo cp live_sensor.py response_actions.py windows_security.py requirements.lock /opt/sentinel-sensor/
+#   sudo python3 -m venv /opt/sentinel-sensor/venv
+#   sudo /opt/sentinel-sensor/venv/bin/pip install -r /opt/sentinel-sensor/requirements.lock
+#   sudo apt install tcpdump
+#   (put the credentials file the panel gave you at /etc/sentinel/sensor-credentials.json, mode 0600)
+#   sudo cp sentinel-sensor.service /etc/systemd/system/ && sudo systemctl enable --now sentinel-sensor
+[Unit]
+Description=SentinelAI network sensor
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/sentinel-sensor
+Environment=SENTINEL_SERVER=https://sentinel.example.com
+Environment=SENTINEL_INTERFACE=eth0
+ExecStart=/opt/sentinel-sensor/venv/bin/python live_sensor.py --server ${SENTINEL_SERVER} --interface ${SENTINEL_INTERFACE} --duration-seconds 0 --credentials-file /etc/sentinel/sensor-credentials.json
+Restart=on-failure
+RestartSec=15
+# Raw sockets are the only privilege it needs.
+User=root
+CapabilityBoundingSet=CAP_NET_RAW CAP_NET_ADMIN
+AmbientCapabilities=CAP_NET_RAW CAP_NET_ADMIN
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/opt/sentinel-sensor/runtime
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

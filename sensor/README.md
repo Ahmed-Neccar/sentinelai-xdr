@@ -94,3 +94,13 @@ The `--server` option can point to a different reachable SentinelAI API, for exa
 ## Current implementation boundary
 
 This is a real passive host sensor integrated with the existing event and rule pipeline. The Windows Security collector is an initial identity signal, not full endpoint detection: file telemetry, centralized agent enrollment and rotation, persistence coverage beyond selected Windows Security events, network-wide packet brokerage, sensor auto-update, multi-sensor health, and a guaranteed durable local queue are not implemented. Validate each source on the actual machine before presenting it as operational.
+
+## Linux (network flows only)
+
+The same program runs on Linux and records the same connection headers (no payloads). Windows Security events, response actions (IP block, host isolation, account disable) and the local controller are Windows-only, so a Linux sensor shows no response capabilities and is managed from its service, not from the Sensors page buttons.
+
+It was tried end to end in a Docker Linux container against a test server: it registered, kept its identity, and forwarded 14 flows that appeared as `net.conn` events. The Docker image in `sensor/linux/` was also run with every capability dropped except `NET_RAW` and `NET_ADMIN`, kept its identity across a restart through the state volume, and a restart within 30 seconds of a stop is refused by the server ("recent live session") until the old session goes stale, so use a restart policy that retries (`--restart unless-stopped`). Not tried: a physical Linux host, macOS, IPv6-only networks, very high packet rates, or the systemd unit file.
+
+Requirements: `tcpdump` (libpcap), and root or the `CAP_NET_RAW` capability. Without tcpdump the sniffer used to start and see nothing, so the sensor now refuses to start and says what to install. Keep `sensor/runtime/` (a volume in Docker): it holds the sensor identity and signing key, and the server refuses a sensor that lost them.
+
+Create the sensor's credentials on the **Sensors** page (Register a new sensor), copy `sensor-credentials.json` to the Linux host (mode 0600), then use `sensor/linux/Dockerfile` or `sensor/linux/sentinel-sensor.service`.

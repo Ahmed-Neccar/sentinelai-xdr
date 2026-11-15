@@ -630,3 +630,9 @@ The previous status listed "measure the false alarm rate" as open. A framework n
 - **Contrast measured** (WCAG ratios from the colours in use): body 16.6:1, muted 8.8:1, faint 5.4:1, badges 8.5 to 10.4:1. White on the first violet was 4.2:1 and the light theme's faint text 4.3:1; both were darkened to 5.7:1 and 5.4:1. Measured from the colour values, not by a screen reader or a browser audit.
 - **Not done / reasoned out.** The controller shared-secret idea (B3) was dropped: a local process running as the same person can read the secret file as easily as it can forge the origin, so it protects only against another account on the same computer, at the price of a pairing step; the origin check already stops web pages. The sensor credential model (B2) and SAML remain.
 - **Checked.** Backend 329 tests, Ruff, MyPy; sensor 81 tests; interface 42 tests and build.
+
+## Update — 2026-11-15 (the sensor runs on Linux; case drawer)
+
+- **Linux network sensor.** The same `live_sensor.py` ran in a Docker Linux container against a test server: it registered, forwarded flows that arrived as `net.conn` events, and the packaged image (`sensor/linux/Dockerfile`, plus a systemd unit) worked with all capabilities dropped except `NET_RAW` and `NET_ADMIN` and kept its identity across a restart. A real gap showed up on the way: without `tcpdump` the sniffer started and captured nothing, silently. The sensor now refuses to start and says what to install (3 tests). Windows Security events, response actions and the local controller remain Windows-only, so a Linux sensor reports no response capabilities. **Not tried:** a physical Linux machine, macOS, high packet rates, the systemd unit.
+- **Case investigation** now opens in the same slide-over drawer as findings (it was an older modal); checked in the browser.
+- **Checked.** Sensor 84 tests.
