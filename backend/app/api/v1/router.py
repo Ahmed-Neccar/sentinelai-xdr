@@ -8,9 +8,11 @@ from app.api.v1 import (
     events,
     health,
     hosts,
+    identity_admin,
     ingest,
     meta,
     notifications,
+    scim,
     users,
 )
 
@@ -26,3 +28,5 @@ api_router.include_router(detections.router)
 api_router.include_router(cases.router)
 api_router.include_router(meta.router)
 api_router.include_router(notifications.router)
+api_router.include_router(identity_admin.router)
+api_router.include_router(scim.router)

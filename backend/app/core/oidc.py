@@ -232,7 +232,14 @@ def exchange_and_validate(code: str, verifier: str, nonce: str) -> dict:
         or not email_is_verified(claims)
     ):
         raise AppError(401, "sso_identity_unverified", "A verified email identity is required")
-    return {"subject": subject, "email": email.lower(), "name": claims.get("name", "")}
+    from app.core.identity import groups_from_claims
+
+    return {
+        "subject": subject,
+        "email": email.lower(),
+        "name": claims.get("name", ""),
+        "groups": groups_from_claims(claims),
+    }
 
 
 def authorization_url(metadata: dict, state: str, nonce: str, challenge: str) -> str:

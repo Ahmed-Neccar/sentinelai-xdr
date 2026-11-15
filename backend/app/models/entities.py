@@ -45,6 +45,15 @@ class Organization(Base):
     mfa_required: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=text("false")
     )
+    # Single sign-on behaviour. Off by default: an account must exist before SSO works.
+    sso_auto_provision: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
+    sso_sync_roles: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
+    # Role given to accounts created by SCIM when the provider sends none.
+    default_role: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -74,6 +83,8 @@ class User(TenantOwned, Base):
     # sign-in. Email can change at the provider; this pair cannot.
     oidc_issuer: Mapped[str | None] = mapped_column(String(512), nullable=True)
     oidc_subject: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # The provisioning provider's id for this person (SCIM externalId).
+    scim_external_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
@@ -112,6 +123,31 @@ class RefreshToken(TenantOwned, Base):
     token_hash: Mapped[str] = mapped_column(String(128), unique=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     revoked: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class SsoRoleMapping(TenantOwned, Base):
+    """Maps a value of the identity provider's groups or roles claim to one of our roles."""
+
+    __tablename__ = "sso_role_mappings"
+    __table_args__ = (UniqueConstraint("organization_id", "claim_value", "role_name"),)
+
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    claim_value: Mapped[str] = mapped_column(String(255))
+    role_name: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ScimToken(TenantOwned, Base):
+    """Bearer token an identity provider uses to provision accounts. Only a hash is stored."""
+
+    __tablename__ = "scim_tokens"
+
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    name: Mapped[str] = mapped_column(String(200))
+    token_hash: Mapped[str] = mapped_column(String(128), unique=True)
+    revoked: Mapped[bool] = mapped_column(Boolean, default=False)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 

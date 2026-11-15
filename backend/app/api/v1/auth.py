@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.api.deps import DbDep, client_ip, get_current_user, require_roles
 from app.audit.service import write_audit
+from app.core import identity as identity_module
 from app.core import oidc
 from app.core.auth_rate_limit import enforce_auth_rate_limit
 from app.core.errors import AppError
@@ -483,6 +484,38 @@ def _complete_oidc_callback(
                 User.email == identity["email"], User.organization_id == organization.id
             ).with_for_update()
         )
+    group_roles = identity_module.mapped_roles(db, identity.get("groups", []))
+    if bound_account is None and email_account is None and organization.sso_auto_provision:
+        # First sign-in of someone the identity provider vouches for: create the account,
+        # but only with roles the organization mapped from the person's groups (or its
+        # default role), so provisioning never hands out access by itself.
+        initial = group_roles or (
+            {organization.default_role} if organization.default_role else set()
+        )
+        if not initial:
+            raise AppError(
+                403,
+                "sso_no_role_mapped",
+                "None of your groups is mapped to a role. Ask your administrator",
+            )
+        bound_account = identity_module.create_account(
+            db,
+            organization,
+            email=identity["email"],
+            full_name=str(identity.get("name") or "")[:200],
+            roles=initial,
+            oidc_issuer=issuer,
+            oidc_subject=identity["subject"],
+        )
+        write_audit(
+            db,
+            actor_id=bound_account.id,
+            action="auth.sso_account_provisioned",
+            target_type="user",
+            target_id=str(bound_account.id),
+            ip_address=client_ip(request),
+            details={"roles": sorted(initial)},
+        )
     try:
         user, bind_identity = oidc.select_account(bound_account, email_account)
     except AppError as exc:
@@ -503,6 +536,17 @@ def _complete_oidc_callback(
             "sso_user_not_provisioned",
             "Your organization administrator must provision your account before SSO sign-in",
         )
+    if organization.sso_sync_roles and group_roles:
+        if identity_module.sync_roles_from_groups(db, user, group_roles):
+            write_audit(
+                db,
+                actor_id=user.id,
+                action="auth.sso_roles_synced",
+                target_type="user",
+                target_id=str(user.id),
+                ip_address=client_ip(request),
+                details={"roles": sorted(group_roles)},
+            )
     if bind_identity:
         user.oidc_issuer = issuer
         user.oidc_subject = identity["subject"]

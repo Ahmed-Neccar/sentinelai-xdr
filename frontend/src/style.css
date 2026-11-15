@@ -126,3 +126,10 @@ form.preferences>.primary{margin:0 22px 22px}
 .dialog-body input[aria-invalid="true"]{border-color:#e0707a}
 .dialog-actions{display:flex;justify-content:flex-end;gap:10px}
 .dialog-saved{margin:0 20px 12px}
+.identity-body{display:grid;gap:16px;padding:18px 22px}.identity-body label{display:flex;flex-direction:column;gap:8px;color:var(--muted,#91a0ad);font-size:13px}
+.identity-body label.check{flex-direction:row;align-items:flex-start;gap:12px}.identity-body label.check input{margin-top:3px}.identity-body label.check span{display:flex;flex-direction:column;gap:4px}.identity-body label.check b{color:var(--text,#dce5ec);font-weight:600}.identity-body label.check small{line-height:1.5}
+.identity-body input[readonly],.identity-add input{padding:10px 12px;border:1px solid var(--line,#25313a);border-radius:6px;background:var(--input-bg,#10171e);color:var(--text,#dce5ec);font:inherit}
+.identity-add{display:flex;flex-wrap:wrap;align-items:flex-end;gap:12px;padding:6px 22px 22px}.identity-add label{display:flex;flex-direction:column;gap:8px;color:var(--muted,#91a0ad);font-size:13px;min-width:220px}
+.identity-empty{padding:4px 22px 8px;color:var(--muted,#91a0ad);font-size:13px}
+.token-once{display:grid;gap:10px;padding:14px;border:1px solid #8a7a3a;border-radius:8px;background:#2a2512}.token-once code{overflow-wrap:anywhere;font-size:12px;color:#f3e6a8}.token-once .secondary{justify-self:start}
+.panel h3{margin:0;font-size:14px}

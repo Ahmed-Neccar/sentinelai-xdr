@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { RefreshCw, UserPlus } from 'lucide-react'
 import { translate, type Language } from './i18n'
 import PasswordDialog from './PasswordDialog'
+import Identity from './Identity'
 
 type Row = Record<string, any>
 type User = { id: string; roles: string[] }
@@ -95,6 +96,14 @@ export default function Users({
     void patch(item, { is_active: !item.is_active })
   }
 
+  function signOutEverywhere(item: Row) {
+    if (!window.confirm(t('End every session of this account now? The person must sign in again.'))) return
+    void run(async () => {
+      await apiRequest(`/users/${item.id}/sign-out`, { method: 'POST' })
+      setPasswordSaved(t('Signed out everywhere:') + ' ' + item.email)
+    }, 'Unable to sign the account out')
+  }
+
   function unlinkSso(item: Row) {
     if (!window.confirm(t('Forget this account’s single sign-on identity? The next single sign-on with this email will be linked again.'))) return
     void patch(item, { unlink_sso: true })
@@ -154,11 +163,13 @@ export default function Users({
             <td><div className="sensor-registry-actions">
               <button className="secondary" disabled={busy} onClick={() => { setPasswordSaved(''); setDialogFor(item) }}>{t('Change password')}</button>
               {item.sso_linked && <button className="secondary" disabled={busy} onClick={() => unlinkSso(item)}>{t('Unlink SSO')}</button>}
+              {!self && <button className="secondary" disabled={busy} onClick={() => signOutEverywhere(item)}>{t('Sign out everywhere')}</button>}
               <button className={item.is_active ? 'sensor-stop' : 'secondary'} disabled={busy || self} onClick={() => toggleActive(item)}>{item.is_active ? t('Disable') : t('Enable')}</button>
             </div></td>
           </tr> })}
         </tbody></table></div> : <p>{t('No users found.')}</p>}
       </section>
+      <Identity language={language} setError={setError} apiRequest={apiRequest} />
       {dialogFor && <PasswordDialog language={language} target={{ id: dialogFor.id, email: dialogFor.email }} self={dialogFor.id === user.id} apiRequest={apiRequest} onClose={() => setDialogFor(null)} onDone={() => { setPasswordSaved(t('Password changed.') + ' ' + dialogFor.email); setDialogFor(null); void load() }} />}
     </div>
   )

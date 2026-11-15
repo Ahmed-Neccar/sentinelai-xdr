@@ -112,6 +112,7 @@ def test_oidc_token_exchange_verifies_signature_audience_issuer_and_nonce(
             "subject": "user-123",
             "email": "analyst@example.com",
             "name": "Analyst",
+            "groups": [],
         }
     else:
         with pytest.raises(AppError, match="sign-in failed"):

@@ -13,7 +13,7 @@ from app.core.errors import AppError
 from app.core.password_policy import check_new_password
 from app.core.permissions import ADMIN, ALL_ROLES, MANAGE_USERS
 from app.core.security import hash_password, verify_password
-from app.models import Organization, Role, User, UserRole
+from app.models import Organization, RefreshToken, Role, User, UserRole
 from app.schemas.common import Page, TokenUser
 
 router = APIRouter(prefix="/users", tags=["users"])
@@ -224,3 +224,25 @@ def patch_user(
         .where(User.id == user.id)
     )
     return serialize(loaded)  # type: ignore[arg-type]
+
+
+@router.post("/{user_id}/sign-out")
+def sign_out_everywhere(user_id: UUID, db: DbDep, actor: Admin, request: Request) -> dict:
+    """End every session of one account: its access tokens stop working at once."""
+    user = db.get(User, user_id)
+    if user is None:
+        raise AppError(404, "not_found", "User not found")
+    user.token_version += 1
+    user.mfa_challenge_id = None
+    for refresh in db.scalars(select(RefreshToken).where(RefreshToken.user_id == user.id)):
+        refresh.revoked = True
+    write_audit(
+        db,
+        actor_id=actor.id,
+        action="user.sign_out_everywhere",
+        target_type="user",
+        target_id=str(user.id),
+        ip_address=client_ip(request),
+    )
+    db.commit()
+    return {"ok": True}

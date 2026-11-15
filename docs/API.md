@@ -72,6 +72,15 @@ MFA uses TOTP authenticator apps. TOTP secrets are encrypted with `MFA_ENCRYPTIO
 | GET | `/users` | administrator |
 | POST | `/users` | administrator |
 | PATCH | `/users/{id}` | administrator | Change name, roles, active flag or someone else's password (`password` plus `confirm_password`, the administrator's own password; an administrator cannot set their own password here, use `POST /auth/password`); `unlink_sso` forgets the bound SSO identity. The last active administrator cannot be disabled or demoted |
+| GET | `/identity/settings` | administrator | SSO provisioning switches, group-to-role mappings, SCIM tokens (never the token itself) |
+| PUT | `/identity/settings` | administrator | `auto_provision`, `sync_roles`, `default_role` (never administrator) |
+| POST | `/identity/mappings` | administrator | map a groups/roles claim value to a role |
+| DELETE | `/identity/mappings/{id}` | administrator | remove a mapping |
+| POST | `/identity/scim-tokens` | administrator | create a SCIM token; shown once, only its hash is stored |
+| DELETE | `/identity/scim-tokens/{id}` | administrator | revoke a SCIM token |
+| POST | `/users/{id}/sign-out` | administrator | end every session of one account at once |
+| GET, POST, PUT, PATCH, DELETE | `/scim/v2/Users[/{id}]` | SCIM bearer token | SCIM 2.0 provisioning: list with `userName eq` / `externalId eq` filters, create, replace, patch (`active`, `displayName`, `name.*`, `externalId`, `roles`), delete = disable. A SCIM token never grants the administrator role |
+| GET | `/scim/v2/ServiceProviderConfig`, `/scim/v2/Groups` | SCIM bearer token (Groups) | capabilities; Groups is always empty |
 
 ### Data sources
 
