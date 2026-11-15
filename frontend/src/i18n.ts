@@ -304,6 +304,15 @@ const tr: Record<string, string> = {
   'Change your own password in Settings.':'Kendi parolanızı Ayarlar sayfasından değiştirin.',
   'Enter your own password above first.':'Önce yukarıya kendi parolanızı girin.',
   'Your password, to confirm a password reset':'Parola sıfırlamayı onaylamak için kendi parolanız',
+  'Change your password':'Parolanızı değiştirin','Set a new password':'Yeni parola belirleyin','Your own account':'Kendi hesabınız','Step':'Adım',
+  'Your current password':'Mevcut parolanız','Your own administrator password':'Kendi yönetici parolanız',
+  'Confirm it is you before choosing a new password.':'Yeni parola seçmeden önce kimliğinizi doğrulayın.',
+  'Confirm it is you before changing someone else’s password.':'Başka birinin parolasını değiştirmeden önce kimliğinizi doğrulayın.',
+  'Continue':'Devam','Back':'Geri','Save password':'Parolayı kaydet','Password changed.':'Parola değiştirildi:',
+  'Use at least 12 characters for the password':'Parola için en az 12 karakter kullanın','Use at most 128 characters':'En fazla 128 karakter kullanın',
+  'The password repeats too few different characters':'Parola çok az farklı karakter içeriyor','Mix letters with digits or symbols':'Harfleri rakam veya simgelerle birlikte kullanın',
+  'That password is too easy to guess':'Bu parola tahmin etmek için fazla kolay','The password must not contain the account name':'Parola hesap adını içermemeli',
+  'Current password is incorrect':'Mevcut parola yanlış','Confirm with your own password to set a password':'Parola belirlemek için kendi parolanızla doğrulayın',
 }
 
 export function translate(text: string, language: Language): string {

@@ -49,7 +49,7 @@ export default function ChangePassword({
       setAgain('')
       setDone(true)
     } catch (error) {
-      setError(error instanceof Error ? error.message : 'Unable to change the password')
+      setError(t(error instanceof Error ? error.message : 'Unable to change the password'))
     } finally {
       setBusy(false)
     }
